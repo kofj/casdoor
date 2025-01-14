@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Card, Col, Input, InputNumber, Row, Select} from "antd";
+import {Button, Card, Col, Input, InputNumber, Row, Select, Switch} from "antd";
 import * as ProductBackend from "./backend/ProductBackend";
 import * as Setting from "./Setting";
 import i18next from "i18next";
@@ -41,7 +41,7 @@ class ProductEditPage extends React.Component {
   UNSAFE_componentWillMount() {
     this.getProduct();
     this.getOrganizations();
-    this.getPaymentProviders();
+    this.getPaymentProviders(this.state.organizationName);
   }
 
   getProduct() {
@@ -67,8 +67,8 @@ class ProductEditPage extends React.Component {
       });
   }
 
-  getPaymentProviders() {
-    ProviderBackend.getProviders(this.props.account.owner)
+  getPaymentProviders(organizationName) {
+    ProviderBackend.getProviders(organizationName)
       .then((res) => {
         if (res.status === "ok") {
           this.setState({
@@ -209,6 +209,14 @@ class ProductEditPage extends React.Component {
                 [
                   {id: "USD", name: "USD"},
                   {id: "CNY", name: "CNY"},
+                  {id: "EUR", name: "EUR"},
+                  {id: "JPY", name: "JPY"},
+                  {id: "GBP", name: "GBP"},
+                  {id: "AUD", name: "AUD"},
+                  {id: "CAD", name: "CAD"},
+                  {id: "CHF", name: "CHF"},
+                  {id: "HKD", name: "HKD"},
+                  {id: "SGD", name: "SGD"},
                 ].map((item, index) => <Option key={index} value={item.id}>{item.name}</Option>)
               }
             </Select>
@@ -216,14 +224,27 @@ class ProductEditPage extends React.Component {
         </Row>
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
-            {Setting.getLabel(i18next.t("product:Price"), i18next.t("product:Price - Tooltip"))} :
+            {Setting.getLabel(i18next.t("product:Is recharge"), i18next.t("product:Is recharge - Tooltip"))} :
           </Col>
           <Col span={22} >
-            <InputNumber value={this.state.product.price} disabled={isCreatedByPlan} onChange={value => {
-              this.updateProductField("price", value);
+            <Switch checked={this.state.product.isRecharge} onChange={value => {
+              this.updateProductField("isRecharge", value);
             }} />
           </Col>
         </Row>
+        {
+          this.state.product.isRecharge ? null : (
+            <Row style={{marginTop: "20px"}} >
+              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+                {Setting.getLabel(i18next.t("product:Price"), i18next.t("product:Price - Tooltip"))} :
+              </Col>
+              <Col span={22} >
+                <InputNumber value={this.state.product.price} disabled={isCreatedByPlan} onChange={value => {
+                  this.updateProductField("price", value);
+                }} />
+              </Col>
+            </Row>
+          )}
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
             {Setting.getLabel(i18next.t("product:Quantity"), i18next.t("product:Quantity - Tooltip"))} :

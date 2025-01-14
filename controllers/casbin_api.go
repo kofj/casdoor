@@ -16,6 +16,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/casdoor/casdoor/object"
 	"github.com/casdoor/casdoor/util"
@@ -23,12 +24,13 @@ import (
 
 // Enforce
 // @Title Enforce
-// @Tag Enforce API
+// @Tag Enforcer API
 // @Description Call Casbin Enforce API
-// @Param   body    body   object.CasbinRequest  true   "Casbin request"
+// @Param   body    body   []string  true   "Casbin request"
 // @Param   permissionId    query   string  false   "permission id"
 // @Param   modelId    query   string  false   "model id"
 // @Param   resourceId    query   string  false   "resource id"
+// @Param   owner    query   string  false   "owner"
 // @Success 200 {object} controllers.Response The Response object
 // @router /enforce [post]
 func (c *ApiController) Enforce() {
@@ -36,13 +38,14 @@ func (c *ApiController) Enforce() {
 	modelId := c.Input().Get("modelId")
 	resourceId := c.Input().Get("resourceId")
 	enforcerId := c.Input().Get("enforcerId")
+	owner := c.Input().Get("owner")
 
 	if len(c.Ctx.Input.RequestBody) == 0 {
 		c.ResponseError("The request body should not be empty")
 		return
 	}
 
-	var request object.CasbinRequest
+	var request []string
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &request)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -56,13 +59,22 @@ func (c *ApiController) Enforce() {
 			return
 		}
 
-		res, err := enforcer.Enforce(request...)
+		res := []bool{}
+		keyRes := []string{}
+
+		// type transformation
+		interfaceRequest := util.StringToInterfaceArray(request)
+
+		enforceResult, err := enforcer.Enforce(interfaceRequest...)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
 		}
 
-		c.ResponseOk(res)
+		res = append(res, enforceResult)
+		keyRes = append(keyRes, enforcer.GetModelAndAdapter())
+
+		c.ResponseOk(res, keyRes)
 		return
 	}
 
@@ -72,22 +84,24 @@ func (c *ApiController) Enforce() {
 			c.ResponseError(err.Error())
 			return
 		}
-
-		res := []bool{}
-
 		if permission == nil {
-			res = append(res, false)
-		} else {
-			enforceResult, err := object.Enforce(permission, &request)
-			if err != nil {
-				c.ResponseError(err.Error())
-				return
-			}
-
-			res = append(res, enforceResult)
+			c.ResponseError(fmt.Sprintf(c.T("permission:The permission: \"%s\" doesn't exist"), permissionId))
+			return
 		}
 
-		c.ResponseOk(res)
+		res := []bool{}
+		keyRes := []string{}
+
+		enforceResult, err := object.Enforce(permission, request)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+
+		res = append(res, enforceResult)
+		keyRes = append(keyRes, permission.GetModelAndAdapter())
+
+		c.ResponseOk(res, keyRes)
 		return
 	}
 
@@ -105,48 +119,57 @@ func (c *ApiController) Enforce() {
 			c.ResponseError(err.Error())
 			return
 		}
+	} else if owner != "" {
+		permissions, err = object.GetPermissions(owner)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
 	} else {
 		c.ResponseError(c.T("general:Missing parameter"))
 		return
 	}
 
 	res := []bool{}
-
+	keyRes := []string{}
 	listPermissionIdMap := object.GroupPermissionsByModelAdapter(permissions)
-	for _, permissionIds := range listPermissionIdMap {
+	for key, permissionIds := range listPermissionIdMap {
 		firstPermission, err := object.GetPermission(permissionIds[0])
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
 		}
 
-		enforceResult, err := object.Enforce(firstPermission, &request, permissionIds...)
+		enforceResult, err := object.Enforce(firstPermission, request, permissionIds...)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
 		}
 
 		res = append(res, enforceResult)
+		keyRes = append(keyRes, key)
 	}
 
-	c.ResponseOk(res)
+	c.ResponseOk(res, keyRes)
 }
 
 // BatchEnforce
 // @Title BatchEnforce
-// @Tag Enforce API
+// @Tag Enforcer API
 // @Description Call Casbin BatchEnforce API
-// @Param   body    body   object.CasbinRequest  true   "array of casbin requests"
+// @Param   body    body   []string  true   "array of casbin requests"
 // @Param   permissionId    query   string  false   "permission id"
 // @Param   modelId    query   string  false   "model id"
+// @Param   owner    query   string  false   "owner"
 // @Success 200 {object} controllers.Response The Response object
 // @router /batch-enforce [post]
 func (c *ApiController) BatchEnforce() {
 	permissionId := c.Input().Get("permissionId")
 	modelId := c.Input().Get("modelId")
 	enforcerId := c.Input().Get("enforcerId")
+	owner := c.Input().Get("owner")
 
-	var requests []object.CasbinRequest
+	var requests [][]string
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &requests)
 	if err != nil {
 		c.ResponseError(err.Error())
@@ -160,13 +183,22 @@ func (c *ApiController) BatchEnforce() {
 			return
 		}
 
-		res, err := enforcer.BatchEnforce(requests)
+		res := [][]bool{}
+		keyRes := []string{}
+
+		// type transformation
+		interfaceRequests := util.StringToInterfaceArray2d(requests)
+
+		enforceResult, err := enforcer.BatchEnforce(interfaceRequests)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
 		}
 
-		c.ResponseOk(res)
+		res = append(res, enforceResult)
+		keyRes = append(keyRes, enforcer.GetModelAndAdapter())
+
+		c.ResponseOk(res, keyRes)
 		return
 	}
 
@@ -176,28 +208,24 @@ func (c *ApiController) BatchEnforce() {
 			c.ResponseError(err.Error())
 			return
 		}
-
-		res := [][]bool{}
-
 		if permission == nil {
-			l := len(requests)
-			resRequest := make([]bool, l)
-			for i := 0; i < l; i++ {
-				resRequest[i] = false
-			}
-
-			res = append(res, resRequest)
-		} else {
-			enforceResult, err := object.BatchEnforce(permission, &requests)
-			if err != nil {
-				c.ResponseError(err.Error())
-				return
-			}
-
-			res = append(res, enforceResult)
+			c.ResponseError(fmt.Sprintf(c.T("permission:The permission: \"%s\" doesn't exist"), permissionId))
+			return
 		}
 
-		c.ResponseOk(res)
+		res := [][]bool{}
+		keyRes := []string{}
+
+		enforceResult, err := object.BatchEnforce(permission, requests)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+
+		res = append(res, enforceResult)
+		keyRes = append(keyRes, permission.GetModelAndAdapter())
+
+		c.ResponseOk(res, keyRes)
 		return
 	}
 
@@ -209,13 +237,19 @@ func (c *ApiController) BatchEnforce() {
 			c.ResponseError(err.Error())
 			return
 		}
+	} else if owner != "" {
+		permissions, err = object.GetPermissions(owner)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
 	} else {
 		c.ResponseError(c.T("general:Missing parameter"))
 		return
 	}
 
 	res := [][]bool{}
-
+	keyRes := []string{}
 	listPermissionIdMap := object.GroupPermissionsByModelAdapter(permissions)
 	for _, permissionIds := range listPermissionIdMap {
 		firstPermission, err := object.GetPermission(permissionIds[0])
@@ -224,23 +258,27 @@ func (c *ApiController) BatchEnforce() {
 			return
 		}
 
-		enforceResult, err := object.BatchEnforce(firstPermission, &requests, permissionIds...)
+		enforceResult, err := object.BatchEnforce(firstPermission, requests, permissionIds...)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
 		}
 
 		res = append(res, enforceResult)
+		keyRes = append(keyRes, firstPermission.GetModelAndAdapter())
 	}
 
-	c.ResponseOk(res)
+	c.ResponseOk(res, keyRes)
 }
 
 func (c *ApiController) GetAllObjects() {
-	userId := c.GetSessionUsername()
+	userId := c.Input().Get("userId")
 	if userId == "" {
-		c.ResponseError(c.T("general:Please login first"))
-		return
+		userId = c.GetSessionUsername()
+		if userId == "" {
+			c.ResponseError(c.T("general:Please login first"))
+			return
+		}
 	}
 
 	objects, err := object.GetAllObjects(userId)
@@ -253,10 +291,13 @@ func (c *ApiController) GetAllObjects() {
 }
 
 func (c *ApiController) GetAllActions() {
-	userId := c.GetSessionUsername()
+	userId := c.Input().Get("userId")
 	if userId == "" {
-		c.ResponseError(c.T("general:Please login first"))
-		return
+		userId = c.GetSessionUsername()
+		if userId == "" {
+			c.ResponseError(c.T("general:Please login first"))
+			return
+		}
 	}
 
 	actions, err := object.GetAllActions(userId)
@@ -269,10 +310,13 @@ func (c *ApiController) GetAllActions() {
 }
 
 func (c *ApiController) GetAllRoles() {
-	userId := c.GetSessionUsername()
+	userId := c.Input().Get("userId")
 	if userId == "" {
-		c.ResponseError(c.T("general:Please login first"))
-		return
+		userId = c.GetSessionUsername()
+		if userId == "" {
+			c.ResponseError(c.T("general:Please login first"))
+			return
+		}
 	}
 
 	roles, err := object.GetAllRoles(userId)

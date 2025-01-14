@@ -93,6 +93,8 @@ func (syncer *Syncer) setUserByKeyValue(user *User, key string, value string) {
 		user.CreatedTime = value
 	case "UpdatedTime":
 		user.UpdatedTime = value
+	case "DeletedTime":
+		user.DeletedTime = value
 	case "Id":
 		user.Id = value
 	case "Type":
@@ -167,6 +169,12 @@ func (syncer *Syncer) setUserByKeyValue(user *User, key string, value string) {
 		user.TotpSecret = value
 	case "SignupApplication":
 		user.SignupApplication = value
+	case "MfaPhoneEnabled":
+		user.MfaPhoneEnabled = util.ParseBool(value)
+	case "MfaEmailEnabled":
+		user.MfaEmailEnabled = util.ParseBool(value)
+	case "RecoveryCodes":
+		user.RecoveryCodes = strings.Split(value, ",")
 	}
 }
 
@@ -266,6 +274,7 @@ func (syncer *Syncer) getMapFromOriginalUser(user *OriginalUser) map[string]stri
 	m["Name"] = user.Name
 	m["CreatedTime"] = user.CreatedTime
 	m["UpdatedTime"] = user.UpdatedTime
+	m["DeletedTime"] = user.DeletedTime
 	m["Id"] = user.Id
 	m["Type"] = user.Type
 	m["Password"] = user.Password
@@ -300,6 +309,9 @@ func (syncer *Syncer) getMapFromOriginalUser(user *OriginalUser) map[string]stri
 	m["PreferredMfaType"] = user.PreferredMfaType
 	m["TotpSecret"] = user.TotpSecret
 	m["SignupApplication"] = user.SignupApplication
+	m["MfaPhoneEnabled"] = util.BoolToString(user.MfaPhoneEnabled)
+	m["MfaEmailEnabled"] = util.BoolToString(user.MfaEmailEnabled)
+	m["RecoveryCodes"] = strings.Join(user.RecoveryCodes, ",")
 
 	m2 := map[string]string{}
 	for _, tableColumn := range syncer.TableColumns {

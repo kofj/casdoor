@@ -46,7 +46,12 @@ func (c *ApiController) GetSystemInfo() {
 // @Success 200 {object} util.VersionInfo The Response object
 // @router /get-version-info [get]
 func (c *ApiController) GetVersionInfo() {
+	errInfo := ""
 	versionInfo, err := util.GetVersionInfo()
+	if err != nil {
+		errInfo = "Git error: " + err.Error()
+	}
+
 	if versionInfo.Version != "" {
 		c.ResponseOk(versionInfo)
 		return
@@ -54,9 +59,11 @@ func (c *ApiController) GetVersionInfo() {
 
 	versionInfo, err = util.GetVersionInfoFromFile()
 	if err != nil {
-		c.ResponseError(err.Error())
+		errInfo = errInfo + ", File error: " + err.Error()
+		c.ResponseError(errInfo)
 		return
 	}
+
 	c.ResponseOk(versionInfo)
 }
 

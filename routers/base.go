@@ -17,7 +17,6 @@ package routers
 import (
 	"fmt"
 	"net"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -36,7 +35,7 @@ type Response struct {
 }
 
 func responseError(ctx *context.Context, error string, data ...interface{}) {
-	ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
+	// ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
 
 	resp := Response{Status: "error", Msg: error}
 	switch len(data) {
@@ -92,17 +91,22 @@ func getUsernameByClientIdSecret(ctx *context.Context) (string, error) {
 	return fmt.Sprintf("app/%s", application.Name), nil
 }
 
-func getUsernameByKeys(ctx *context.Context) string {
+func getUsernameByKeys(ctx *context.Context) (string, error) {
 	accessKey, accessSecret := getKeys(ctx)
 	user, err := object.GetUserByAccessKey(accessKey)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 
-	if user != nil && accessSecret == user.AccessSecret {
-		return user.GetId()
+	if user == nil {
+		return "", fmt.Errorf("user not found for access key: %s", accessKey)
 	}
-	return ""
+
+	if accessSecret != user.AccessSecret {
+		return "", fmt.Errorf("incorrect access secret for user: %s", user.Name)
+	}
+
+	return user.GetId(), nil
 }
 
 func getSessionUser(ctx *context.Context) string {

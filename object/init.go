@@ -71,13 +71,14 @@ func getBuiltInAccountItems() []*AccountItem {
 		{Name: "Permissions", Visible: true, ViewRule: "Public", ModifyRule: "Immutable"},
 		{Name: "Groups", Visible: true, ViewRule: "Public", ModifyRule: "Admin"},
 		{Name: "3rd-party logins", Visible: true, ViewRule: "Self", ModifyRule: "Self"},
-		{Name: "Properties", Visible: false, ViewRule: "Admin", ModifyRule: "Admin"},
+		{Name: "Properties", Visible: true, ViewRule: "Admin", ModifyRule: "Admin"},
 		{Name: "Is admin", Visible: true, ViewRule: "Admin", ModifyRule: "Admin"},
 		{Name: "Is forbidden", Visible: true, ViewRule: "Admin", ModifyRule: "Admin"},
 		{Name: "Is deleted", Visible: true, ViewRule: "Admin", ModifyRule: "Admin"},
 		{Name: "Multi-factor authentication", Visible: true, ViewRule: "Self", ModifyRule: "Self"},
 		{Name: "WebAuthn credentials", Visible: true, ViewRule: "Self", ModifyRule: "Self"},
 		{Name: "Managed accounts", Visible: true, ViewRule: "Self", ModifyRule: "Self"},
+		{Name: "MFA accounts", Visible: true, ViewRule: "Self", ModifyRule: "Self"},
 	}
 }
 
@@ -108,6 +109,8 @@ func initBuiltInOrganization() bool {
 		AccountItems:       getBuiltInAccountItems(),
 		EnableSoftDeletion: false,
 		IsProfilePublic:    false,
+		UseEmailAsUsername: false,
+		EnableTour:         true,
 	}
 	_, err = AddOrganization(organization)
 	if err != nil {
@@ -180,6 +183,12 @@ func initBuiltInApplication() {
 		Providers: []*ProviderItem{
 			{Name: "provider_captcha_default", CanSignUp: false, CanSignIn: false, CanUnlink: false, Prompted: false, SignupGroup: "", Rule: "None", Provider: nil},
 		},
+		SigninMethods: []*SigninMethod{
+			{Name: "Password", DisplayName: "Password", Rule: "All"},
+			{Name: "Verification code", DisplayName: "Verification code", Rule: "All"},
+			{Name: "WebAuthn", DisplayName: "WebAuthn", Rule: "None"},
+			{Name: "Face ID", DisplayName: "Face ID", Rule: "None"},
+		},
 		SignupItems: []*SignupItem{
 			{Name: "ID", Visible: false, Required: true, Prompted: false, Rule: "Random"},
 			{Name: "Username", Visible: true, Required: true, Prompted: false, Rule: "None"},
@@ -192,6 +201,8 @@ func initBuiltInApplication() {
 		},
 		Tags:          []string{},
 		RedirectUris:  []string{},
+		TokenFormat:   "JWT",
+		TokenFields:   []string{},
 		ExpireInHours: 168,
 		FormOffset:    2,
 	}
@@ -401,7 +412,7 @@ func initBuiltInPermission() {
 		Groups:       []string{},
 		Roles:        []string{},
 		Domains:      []string{},
-		Model:        "model-built-in",
+		Model:        "user-model-built-in",
 		Adapter:      "",
 		ResourceType: "Application",
 		Resources:    []string{"app-built-in"},

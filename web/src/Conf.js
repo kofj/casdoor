@@ -14,7 +14,7 @@
 
 export const DefaultApplication = "app-built-in";
 
-export const CasvisorUrl = "https://github.com/casbin/casvisor";
+export const CasvisorUrl = "";
 
 export const ShowGithubCorner = false;
 export const IsDemoMode = false;
@@ -31,3 +31,6 @@ export const ThemeDefault = {
 };
 
 export const CustomFooter = null;
+
+// Blank or null to hide Ai Assistant button
+export const AiAssistantUrl = "https://ai.casbin.com";

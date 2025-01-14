@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React from "react";
-import {Button, Col, Result, Row, Steps} from "antd";
+import {Button, Col, Result, Row, Spin, Steps} from "antd";
 import {withRouter} from "react-router-dom";
 import * as ApplicationBackend from "../backend/ApplicationBackend";
 import * as Setting from "../Setting";
@@ -37,18 +37,25 @@ class MfaSetupPage extends React.Component {
     this.state = {
       account: props.account,
       application: null,
-      applicationName: props.account.signupApplication ?? "",
+      applicationName: props.account.signupApplication ?? localStorage.getItem("applicationName") ?? "",
       current: location.state?.from !== undefined ? 1 : 0,
       mfaProps: null,
       mfaType: params.get("mfaType") ?? SmsMfaType,
       isPromptPage: props.isPromptPage || location.state?.from !== undefined,
+      loading: false,
     };
   }
 
   componentDidMount() {
     this.getApplication();
     if (this.state.current === 1) {
-      this.initMfaProps();
+      this.setState({
+        loading: true,
+      });
+
+      setTimeout(() => {
+        this.initMfaProps();
+      }, 200);
     }
   }
 
@@ -85,6 +92,7 @@ class MfaSetupPage extends React.Component {
       if (res.status === "ok") {
         this.setState({
           mfaProps: res.data,
+          loading: false,
         });
       } else {
         Setting.showMessage("error", i18next.t("mfa:Failed to initiate MFA"));
@@ -98,7 +106,7 @@ class MfaSetupPage extends React.Component {
 
   renderMfaTypeSwitch() {
     const renderSmsLink = () => {
-      if (this.state.mfaType === SmsMfaType || this.props.account.mfaPhoneEnabled) {
+      if (this.state.mfaType === SmsMfaType) {
         return null;
       }
       return (<Button type={"link"} onClick={() => {
@@ -112,7 +120,7 @@ class MfaSetupPage extends React.Component {
     };
 
     const renderEmailLink = () => {
-      if (this.state.mfaType === EmailMfaType || this.props.account.mfaEmailEnabled) {
+      if (this.state.mfaType === EmailMfaType) {
         return null;
       }
       return (<Button type={"link"} onClick={() => {
@@ -126,7 +134,7 @@ class MfaSetupPage extends React.Component {
     };
 
     const renderTotpLink = () => {
-      if (this.state.mfaType === TotpMfaType || this.props.account.totpSecret !== "") {
+      if (this.state.mfaType === TotpMfaType) {
         return null;
       }
       return (<Button type={"link"} onClick={() => {
@@ -171,8 +179,10 @@ class MfaSetupPage extends React.Component {
             mfaProps={this.state.mfaProps}
             application={this.state.application}
             user={this.props.account}
-            onSuccess={() => {
+            onSuccess={(res) => {
               this.setState({
+                dest: res.dest,
+                countryCode: res.countryCode,
                 current: this.state.current + 1,
               });
             }}
@@ -187,11 +197,13 @@ class MfaSetupPage extends React.Component {
       );
     case 2:
       return (
-        <MfaEnableForm user={this.getUser()} mfaType={this.state.mfaType} recoveryCodes={this.state.mfaProps.recoveryCodes}
+        <MfaEnableForm user={this.getUser()} mfaType={this.state.mfaType} secret={this.state.mfaProps.secret} recoveryCodes={this.state.mfaProps.recoveryCodes} dest={this.state.dest} countryCode={this.state.countryCode}
           onSuccess={() => {
             Setting.showMessage("success", i18next.t("general:Enabled successfully"));
             this.props.onfinish();
-            if (localStorage.getItem("mfaRedirectUrl") !== null) {
+
+            const mfaRedirectUrl = localStorage.getItem("mfaRedirectUrl");
+            if (mfaRedirectUrl !== undefined && mfaRedirectUrl !== null) {
               Setting.goToLink(localStorage.getItem("mfaRedirectUrl"));
               localStorage.removeItem("mfaRedirectUrl");
             } else {
@@ -229,15 +241,17 @@ class MfaSetupPage extends React.Component {
               <p style={{textAlign: "center", fontSize: "16px", marginTop: "10px"}}>{i18next.t("mfa:Each time you sign in to your Account, you'll need your password and a authentication code")}</p>
             </Col>
           </Row>
-          <Steps current={this.state.current}
-            items={[
-              {title: i18next.t("mfa:Verify Password"), icon: <UserOutlined />},
-              {title: i18next.t("mfa:Verify Code"), icon: <KeyOutlined />},
-              {title: i18next.t("general:Enable"), icon: <CheckOutlined />},
-            ]}
-            style={{width: "90%", maxWidth: "500px", margin: "auto", marginTop: "50px",
-            }} >
-          </Steps>
+          <Spin spinning={this.state.loading}>
+            <Steps current={this.state.current}
+              items={[
+                {title: i18next.t("mfa:Verify Password"), icon: <UserOutlined />},
+                {title: i18next.t("mfa:Verify Code"), icon: <KeyOutlined />},
+                {title: i18next.t("general:Enable"), icon: <CheckOutlined />},
+              ]}
+              style={{width: "90%", maxWidth: "500px", margin: "auto", marginTop: "50px",
+              }} >
+            </Steps>
+          </Spin>
         </Col>
         <Col span={24} style={{display: "flex", justifyContent: "center"}}>
           <div style={{marginTop: "10px", textAlign: "center"}}>

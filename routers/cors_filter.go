@@ -16,24 +16,26 @@ package routers
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/beego/beego/context"
 	"github.com/casdoor/casdoor/conf"
 	"github.com/casdoor/casdoor/object"
+	"github.com/casdoor/casdoor/util"
 )
 
 const (
-	headerOrigin       = "Origin"
-	headerAllowOrigin  = "Access-Control-Allow-Origin"
-	headerAllowMethods = "Access-Control-Allow-Methods"
-	headerAllowHeaders = "Access-Control-Allow-Headers"
+	headerOrigin           = "Origin"
+	headerAllowOrigin      = "Access-Control-Allow-Origin"
+	headerAllowMethods     = "Access-Control-Allow-Methods"
+	headerAllowHeaders     = "Access-Control-Allow-Headers"
+	headerAllowCredentials = "Access-Control-Allow-Credentials"
 )
 
 func setCorsHeaders(ctx *context.Context, origin string) {
 	ctx.Output.Header(headerAllowOrigin, origin)
 	ctx.Output.Header(headerAllowMethods, "POST, GET, OPTIONS, DELETE")
 	ctx.Output.Header(headerAllowHeaders, "Content-Type, Authorization")
+	ctx.Output.Header(headerAllowCredentials, "true")
 
 	if ctx.Input.Method() == "OPTIONS" {
 		ctx.ResponseWriter.WriteHeader(http.StatusOK)
@@ -46,7 +48,17 @@ func CorsFilter(ctx *context.Context) {
 	originHostname := getHostname(origin)
 	host := removePort(ctx.Request.Host)
 
-	if strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "https://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") || strings.HasPrefix(origin, "http://casdoor-app") {
+	if origin == "null" {
+		origin = ""
+	}
+
+	isValid, err := util.IsValidOrigin(origin)
+	if err != nil {
+		ctx.ResponseWriter.WriteHeader(http.StatusForbidden)
+		responseError(ctx, err.Error())
+		return
+	}
+	if isValid {
 		setCorsHeaders(ctx, origin)
 		return
 	}

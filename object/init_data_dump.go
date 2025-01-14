@@ -96,6 +96,56 @@ func writeInitDataToFile(filePath string) error {
 		return err
 	}
 
+	groups, err := GetGroups("")
+	if err != nil {
+		return err
+	}
+
+	adapters, err := GetAdapters("")
+	if err != nil {
+		return err
+	}
+
+	enforcers, err := GetEnforcers("")
+	if err != nil {
+		return err
+	}
+
+	plans, err := GetPlans("")
+	if err != nil {
+		return err
+	}
+
+	pricings, err := GetPricings("")
+	if err != nil {
+		return err
+	}
+
+	invitations, err := GetInvitations("")
+	if err != nil {
+		return err
+	}
+
+	records, err := GetRecords()
+	if err != nil {
+		return err
+	}
+
+	sessions, err := GetSessions("")
+	if err != nil {
+		return err
+	}
+
+	subscriptions, err := GetSubscriptions("")
+	if err != nil {
+		return err
+	}
+
+	transactions, err := GetTransactions("")
+	if err != nil {
+		return err
+	}
+
 	data := &InitData{
 		Organizations: organizations,
 		Applications:  applications,
@@ -112,6 +162,16 @@ func writeInitDataToFile(filePath string) error {
 		Syncers:       syncers,
 		Tokens:        tokens,
 		Webhooks:      webhooks,
+		Groups:        groups,
+		Adapters:      adapters,
+		Enforcers:     enforcers,
+		Plans:         plans,
+		Pricings:      pricings,
+		Invitations:   invitations,
+		Records:       records,
+		Sessions:      sessions,
+		Subscriptions: subscriptions,
+		Transactions:  transactions,
 	}
 
 	text := util.StructToJsonFormatted(data)

@@ -13,7 +13,7 @@
   <a href="https://github.com/casdoor/casdoor/releases/latest">
     <img alt="GitHub Release" src="https://img.shields.io/github/v/release/casdoor/casdoor.svg">
   </a>
-  <a href="https://hub.docker.com/repository/docker/casbin/casdoor">
+  <a href="https://hub.docker.com/r/casbin/casdoor">
     <img alt="Docker Image Version (latest semver)" src="https://img.shields.io/badge/Docker%20Hub-latest-brightgreen">
   </a>
 </p>
@@ -42,6 +42,20 @@
   </a>
 </p>
 
+<p align="center">
+  <sup>Sponsored by</sup>
+  <br>
+  <a href="https://stytch.com/docs?utm_source=oss-sponsorship&utm_medium=paid_sponsorship&utm_campaign=casbin">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://cdn.casbin.org/img/stytch-white.png">
+      <source media="(prefers-color-scheme: light)" srcset="https://cdn.casbin.org/img/stytch-charcoal.png">
+      <img src="https://cdn.casbin.org/img/stytch-charcoal.png" width="275">
+    </picture>
+  </a><br/>
+  <a href="https://stytch.com/docs?utm_source=oss-sponsorship&utm_medium=paid_sponsorship&utm_campaign=casbin"><b>Build auth with fraud prevention, faster.</b><br/> Try Stytch for API-first authentication, user & org management, multi-tenant SSO, MFA, device fingerprinting, and more.</a>
+  <br>
+</p>
+
 ## Online demo
 
 - Read-only site: https://door.casdoor.com (any modification operation will fail)
@@ -55,6 +69,7 @@ https://casdoor.org
 
 - By source code: https://casdoor.org/docs/basic/server-installation
 - By Docker: https://casdoor.org/docs/basic/try-with-docker
+- By Kubernetes Helm: https://casdoor.org/docs/basic/try-with-helm
 
 ## How to connect to Casdoor?
 
@@ -72,8 +87,7 @@ https://casdoor.org/docs/category/integrations
 ## How to contact?
 
 - Discord: https://discord.gg/5rPsrAzK7S
-- Forum: https://forum.casbin.com
-- Contact: https://tawk.to/chat/623352fea34c2456412b8c51/1fuc7od6e
+- Contact: https://casdoor.org/help
 
 ## Contribute
 

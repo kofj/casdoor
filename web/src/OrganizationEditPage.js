@@ -19,6 +19,7 @@ import * as ApplicationBackend from "./backend/ApplicationBackend";
 import * as LdapBackend from "./backend/LdapBackend";
 import * as Setting from "./Setting";
 import * as Conf from "./Conf";
+import * as Obfuscator from "./auth/Obfuscator";
 import i18next from "i18next";
 import {LinkOutlined} from "@ant-design/icons";
 import LdapTable from "./table/LdapTable";
@@ -56,6 +57,7 @@ class OrganizationEditPage extends React.Component {
             this.props.history.push("/404");
             return;
           }
+          organization["enableDarkLogo"] = !!organization["logoDark"];
 
           this.setState({
             organization: organization,
@@ -111,6 +113,22 @@ class OrganizationEditPage extends React.Component {
     });
   }
 
+  updatePasswordObfuscator(key, value) {
+    const organization = this.state.organization;
+    if (organization.passwordObfuscatorType === "") {
+      organization.passwordObfuscatorType = "Plain";
+    }
+    if (key === "type") {
+      organization.passwordObfuscatorType = value;
+      organization.passwordObfuscatorKey = Obfuscator.getRandomKeyForObfuscator(value);
+    } else if (key === "key") {
+      organization.passwordObfuscatorKey = value;
+    }
+    this.setState({
+      organization: organization,
+    });
+  }
+
   renderOrganization() {
     return (
       <Card size="small" title={
@@ -141,6 +159,78 @@ class OrganizationEditPage extends React.Component {
             }} />
           </Col>
         </Row>
+        <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            {Setting.getLabel(i18next.t("general:Enable dark logo"), i18next.t("general:Enable dark logo - Tooltip"))} :
+          </Col>
+          <Col span={22} >
+            <Switch checked={this.state.organization.enableDarkLogo} onChange={e => {
+              this.updateOrganizationField("enableDarkLogo", e);
+              if (!e) {
+                this.updateOrganizationField("logoDark", "");
+              }
+            }} />
+          </Col>
+        </Row>
+        <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            {Setting.getLabel(i18next.t("general:Logo"), i18next.t("general:Logo - Tooltip"))} :
+          </Col>
+          <Col span={22} >
+            <Row style={{marginTop: "20px"}} >
+              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 1}>
+                {Setting.getLabel(i18next.t("general:URL"), i18next.t("general:URL - Tooltip"))} :
+              </Col>
+              <Col span={23} >
+                <Input prefix={<LinkOutlined />} value={this.state.organization.logo} onChange={e => {
+                  this.updateOrganizationField("logo", e.target.value);
+                }} />
+              </Col>
+            </Row>
+            <Row style={{marginTop: "20px"}} >
+              <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 1}>
+                {i18next.t("general:Preview")}:
+              </Col>
+              <Col span={23}>
+                <a target="_blank" rel="noreferrer" href={this.state.organization.logo}>
+                  <img src={this.state.organization.logo ? this.state.organization.logo : Setting.getLogo([""])} alt={this.state.organization.logo} height={90} style={{background: "white", marginBottom: "20px"}} />
+                </a>
+              </Col>
+            </Row>
+          </Col>
+        </Row>
+        {
+          !this.state.organization.enableDarkLogo ? null : (<Row style={{marginTop: "20px"}}>
+            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              {Setting.getLabel(i18next.t("general:Logo dark"), i18next.t("general:Logo dark - Tooltip"))} :
+            </Col>
+            <Col span={22}>
+              <Row style={{marginTop: "20px"}}>
+                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 1}>
+                  {Setting.getLabel(i18next.t("general:URL"), i18next.t("general:URL - Tooltip"))} :
+                </Col>
+                <Col span={23}>
+                  <Input prefix={<LinkOutlined />} value={this.state.organization.logoDark} onChange={e => {
+                    this.updateOrganizationField("logoDark", e.target.value);
+                  }} />
+                </Col>
+              </Row>
+              <Row style={{marginTop: "20px"}}>
+                <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 1}>
+                  {i18next.t("general:Preview")}:
+                </Col>
+                <Col span={23}>
+                  <a target="_blank" rel="noreferrer" href={this.state.organization.logoDark}>
+                    <img
+                      src={this.state.organization.logoDark ? this.state.organization.logoDark : Setting.getLogo(["dark"])}
+                      alt={this.state.organization.logoDark} height={90}
+                      style={{background: "#141414", marginBottom: "20px"}} />
+                  </a>
+                </Col>
+              </Row>
+            </Col>
+          </Row>)
+        }
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
             {Setting.getLabel(i18next.t("general:Favicon"), i18next.t("general:Favicon - Tooltip"))} :
@@ -184,7 +274,7 @@ class OrganizationEditPage extends React.Component {
           </Col>
           <Col span={22} >
             <Select virtual={false} style={{width: "100%"}} value={this.state.organization.passwordType} onChange={(value => {this.updateOrganizationField("passwordType", value);})}
-              options={["plain", "salt", "md5-salt", "bcrypt", "pbkdf2-salt", "argon2id"].map(item => Setting.getOption(item, item))}
+              options={["plain", "salt", "sha512-salt", "md5-salt", "bcrypt", "pbkdf2-salt", "argon2id"].map(item => Setting.getOption(item, item))}
             />
           </Col>
         </Row>
@@ -223,6 +313,44 @@ class OrganizationEditPage extends React.Component {
         </Row>
         <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            {Setting.getLabel(i18next.t("general:Password obfuscator"), i18next.t("general:Password obfuscator - Tooltip"))} :
+          </Col>
+          <Col span={22} >
+            <Select virtual={false} style={{width: "100%"}}
+              value={this.state.organization.passwordObfuscatorType}
+              onChange={(value => {this.updatePasswordObfuscator("type", value);})}>
+              {
+                [
+                  {id: "Plain", name: "Plain"},
+                  {id: "AES", name: "AES"},
+                  {id: "DES", name: "DES"},
+                ].map((obfuscatorType, index) => <Option key={index} value={obfuscatorType.id}>{obfuscatorType.name}</Option>)
+              }
+            </Select>
+          </Col>
+        </Row>
+        {
+          (this.state.organization.passwordObfuscatorType === "Plain" || this.state.organization.passwordObfuscatorType === "") ? null : (<Row style={{marginTop: "20px"}} >
+            <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+              {Setting.getLabel(i18next.t("general:Password obf key"), i18next.t("general:Password obf key - Tooltip"))} :
+            </Col>
+            <Col span={22} >
+              <Input value={this.state.organization.passwordObfuscatorKey} onChange={(e) => {this.updatePasswordObfuscator("key", e.target.value);}} />
+            </Col>
+          </Row>)
+        }
+        <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
+            {Setting.getLabel(i18next.t("organization:Password expire days"), i18next.t("organization:Password expire days - Tooltip"))} :
+          </Col>
+          <Col span={4} >
+            <InputNumber value={this.state.organization.passwordExpireDays} onChange={value => {
+              this.updateOrganizationField("passwordExpireDays", value);
+            }} />
+          </Col>
+        </Row>
+        <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
             {Setting.getLabel(i18next.t("general:Supported country codes"), i18next.t("general:Supported country codes - Tooltip"))} :
           </Col>
           <Col span={22} >
@@ -232,6 +360,7 @@ class OrganizationEditPage extends React.Component {
               }}
               filterOption={(input, option) => (option?.text ?? "").toLowerCase().includes(input.toLowerCase())}
             >
+              {Setting.getCountryCodeOption({name: i18next.t("organization:All"), code: "All", phone: 0})}
               {
                 Setting.getCountryCodeData().map((country) => Setting.getCountryCodeOption(country))
               }
@@ -287,7 +416,7 @@ class OrganizationEditPage extends React.Component {
           </Col>
           <Col span={22} >
             <Select virtual={false} style={{width: "100%"}} value={this.state.organization.defaultApplication} onChange={(value => {this.updateOrganizationField("defaultApplication", value);})}
-              options={this.state.applications?.map((item) => Setting.getOption(item.name, item.name))
+              options={this.state.applications?.map((item) => Setting.getOption(Setting.getApplicationDisplayName(item.name), item.name))
               } />
           </Col>
         </Row>
@@ -334,6 +463,16 @@ class OrganizationEditPage extends React.Component {
           </Col>
         </Row>
         <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 22 : 2}>
+            {Setting.getLabel(i18next.t("general:IP whitelist"), i18next.t("general:IP whitelist - Tooltip"))} :
+          </Col>
+          <Col span={22} >
+            <Input value={this.state.organization.ipWhitelist} onChange={e => {
+              this.updateOrganizationField("ipWhitelist", e.target.value);
+            }} />
+          </Col>
+        </Row>
+        <Row style={{marginTop: "20px"}} >
           <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
             {Setting.getLabel(i18next.t("organization:Init score"), i18next.t("organization:Init score - Tooltip"))} :
           </Col>
@@ -360,6 +499,26 @@ class OrganizationEditPage extends React.Component {
           <Col span={1} >
             <Switch checked={this.state.organization.isProfilePublic} onChange={checked => {
               this.updateOrganizationField("isProfilePublic", checked);
+            }} />
+          </Col>
+        </Row>
+        <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
+            {Setting.getLabel(i18next.t("organization:Use Email as username"), i18next.t("organization:Use Email as username - Tooltip"))} :
+          </Col>
+          <Col span={1} >
+            <Switch checked={this.state.organization.useEmailAsUsername} onChange={checked => {
+              this.updateOrganizationField("useEmailAsUsername", checked);
+            }} />
+          </Col>
+        </Row>
+        <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
+            {Setting.getLabel(i18next.t("general:Enable tour"), i18next.t("general:Enable tour - Tooltip"))} :
+          </Col>
+          <Col span={1} >
+            <Switch checked={this.state.organization.enableTour} onChange={checked => {
+              this.updateOrganizationField("enableTour", checked);
             }} />
           </Col>
         </Row>
@@ -393,7 +552,7 @@ class OrganizationEditPage extends React.Component {
           </Col>
           <Col span={22} style={{marginTop: "5px"}}>
             <Row>
-              <Radio.Group value={this.state.organization.themeData?.isEnabled ?? false} onChange={e => {
+              <Radio.Group buttonStyle="solid" value={this.state.organization.themeData?.isEnabled ?? false} onChange={e => {
                 const {_, ...theme} = this.state.organization.themeData ?? {...Conf.ThemeDefault, isEnabled: false};
                 this.updateOrganizationField("themeData", {...theme, isEnabled: e.target.value});
               }} >
@@ -434,6 +593,12 @@ class OrganizationEditPage extends React.Component {
   submitOrganizationEdit(exitAfterSave) {
     const organization = Setting.deepCopy(this.state.organization);
     organization.accountItems = organization.accountItems?.filter(accountItem => accountItem.name !== "Please select an account item");
+
+    const passwordObfuscatorErrorMessage = Obfuscator.checkPasswordObfuscator(organization.passwordObfuscatorType, organization.passwordObfuscatorKey);
+    if (passwordObfuscatorErrorMessage.length > 0) {
+      Setting.showMessage("error", passwordObfuscatorErrorMessage);
+      return;
+    }
 
     OrganizationBackend.updateOrganization(this.state.organization.owner, this.state.organizationName, organization)
       .then((res) => {

@@ -13,11 +13,12 @@
 // limitations under the License.
 
 import React from "react";
-import {Alert, Button, Result} from "antd";
+import {Alert, Button, Modal, Result} from "antd";
 import i18next from "i18next";
 import {getWechatMessageEvent} from "./AuthBackend";
 import * as Setting from "../Setting";
 import * as Provider from "./Provider";
+import * as AuthBackend from "./AuthBackend";
 
 export function renderMessage(msg) {
   if (msg !== null) {
@@ -112,6 +113,9 @@ export function getCasLoginParameters(owner, name) {
 
 export function getOAuthGetParameters(params) {
   const queries = (params !== undefined) ? params : new URLSearchParams(window.location.search);
+  const lowercaseQueries = {};
+  queries.forEach((val, key) => {lowercaseQueries[key.toLowerCase()] = val;});
+
   const clientId = getRefinedValue(queries.get("client_id"));
   const responseType = getRefinedValue(queries.get("response_type"));
 
@@ -137,9 +141,9 @@ export function getOAuthGetParameters(params) {
   const nonce = getRefinedValue(queries.get("nonce"));
   const challengeMethod = getRefinedValue(queries.get("code_challenge_method"));
   const codeChallenge = getRefinedValue(queries.get("code_challenge"));
-  const samlRequest = getRefinedValue(queries.get("SAMLRequest"));
-  const relayState = getRefinedValue(queries.get("RelayState"));
-  const noRedirect = getRefinedValue(queries.get("noRedirect"));
+  const samlRequest = getRefinedValue(lowercaseQueries["samlRequest".toLowerCase()]);
+  const relayState = getRefinedValue(lowercaseQueries["RelayState".toLowerCase()]);
+  const noRedirect = getRefinedValue(lowercaseQueries["noRedirect".toLowerCase()]);
 
   if (clientId === "" && samlRequest === "") {
     // login
@@ -188,11 +192,36 @@ export function getQueryParamsFromState(state) {
   }
 }
 
-export function getEvent(application, provider) {
-  getWechatMessageEvent()
+export function getEvent(application, provider, ticket, method) {
+  getWechatMessageEvent(ticket)
     .then(res => {
       if (res.data === "SCAN" || res.data === "subscribe") {
-        Setting.goToLink(Provider.getAuthUrl(application, provider, "signup"));
+        const code = res?.data2;
+        Setting.goToLink(Provider.getAuthUrl(application, provider, method ?? "signup", code));
       }
     });
+}
+
+export async function WechatOfficialAccountModal(application, provider, method) {
+  AuthBackend.getWechatQRCode(`${provider.owner}/${provider.name}`).then(
+    async res => {
+      if (res.status !== "ok") {
+        Setting.showMessage("error", res?.msg);
+        return;
+      }
+
+      const t1 = setInterval(await getEvent, 1000, application, provider, res.data2, method);
+      {Modal.info({
+        title: i18next.t("provider:Please use WeChat to scan the QR code and follow the official account for sign in"),
+        content: (
+          <div style={{marginRight: "34px"}}>
+            <img src = {"data:image/png;base64," + res.data} alt="Wechat QR code" style={{width: "100%"}} />
+          </div>
+        ),
+        onOk() {
+          window.clearInterval(t1);
+        },
+      });}
+    }
+  );
 }

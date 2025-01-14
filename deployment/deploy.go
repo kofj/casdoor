@@ -27,7 +27,21 @@ import (
 )
 
 func deployStaticFiles(provider *object.Provider) {
-	storageProvider := storage.GetStorageProvider(provider.Type, provider.ClientId, provider.ClientSecret, provider.RegionId, provider.Bucket, provider.Endpoint)
+	certificate := ""
+	if provider.Category == "Storage" && provider.Type == "Casdoor" {
+		cert, err := object.GetCert(util.GetId(provider.Owner, provider.Cert))
+		if err != nil {
+			panic(err)
+		}
+		if cert == nil {
+			panic(err)
+		}
+		certificate = cert.Certificate
+	}
+	storageProvider, err := storage.GetStorageProvider(provider.Type, provider.ClientId, provider.ClientSecret, provider.RegionId, provider.Bucket, provider.Endpoint, certificate, provider.Content)
+	if err != nil {
+		panic(err)
+	}
 	if storageProvider == nil {
 		panic(fmt.Sprintf("the provider type: %s is not supported", provider.Type))
 	}

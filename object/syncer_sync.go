@@ -54,6 +54,15 @@ func (syncer *Syncer) syncUsers() error {
 	var affiliationMap map[int]string
 	if syncer.AffiliationTable != "" {
 		_, affiliationMap, err = syncer.getAffiliationMap()
+		if err != nil {
+			line := fmt.Sprintf("[%s] %s\n", util.GetCurrentTime(), err.Error())
+			_, err2 := updateSyncerErrorText(syncer, line)
+			if err2 != nil {
+				panic(err2)
+			}
+
+			return err
+		}
 	}
 
 	key := syncer.getKey()
@@ -133,9 +142,11 @@ func (syncer *Syncer) syncUsers() error {
 		}
 	}
 
-	_, err = AddUsersInBatch(newUsers)
-	if err != nil {
-		return err
+	if len(newUsers) != 0 {
+		_, err = AddUsersInBatch(newUsers)
+		if err != nil {
+			return err
+		}
 	}
 
 	if !syncer.IsReadOnly {

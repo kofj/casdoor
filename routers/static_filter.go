@@ -43,6 +43,10 @@ func getWebBuildFolder() string {
 		return path
 	}
 
+	if util.FileExist(filepath.Join(frontendBaseDir, "index.html")) {
+		return frontendBaseDir
+	}
+
 	path = filepath.Join(frontendBaseDir, "web/build")
 	return path
 }
@@ -58,8 +62,8 @@ func fastAutoSignin(ctx *context.Context) (string, error) {
 	redirectUri := ctx.Input.Query("redirect_uri")
 	scope := ctx.Input.Query("scope")
 	state := ctx.Input.Query("state")
-	nonce := ""
-	codeChallenge := ""
+	nonce := ctx.Input.Query("nonce")
+	codeChallenge := ctx.Input.Query("code_challenge")
 	if clientId == "" || responseType != "code" || redirectUri == "" {
 		return "", nil
 	}
