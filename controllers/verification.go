@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/beego/beego/utils/pagination"
 	"github.com/casdoor/casdoor/captcha"
 	"github.com/casdoor/casdoor/form"
 	"github.com/casdoor/casdoor/object"
@@ -35,10 +36,95 @@ const (
 	MfaAuthVerification  = "mfaAuth"
 )
 
+// GetVerifications
+// @Title GetVerifications
+// @Tag Verification API
+// @Description get payments
+// @Param   owner     query    string  true        "The owner of payments"
+// @Success 200 {array} object.Verification The Response object
+// @router /get-payments [get]
+func (c *ApiController) GetVerifications() {
+	owner := c.Input().Get("owner")
+	limit := c.Input().Get("pageSize")
+	page := c.Input().Get("p")
+	field := c.Input().Get("field")
+	value := c.Input().Get("value")
+	sortField := c.Input().Get("sortField")
+	sortOrder := c.Input().Get("sortOrder")
+
+	if limit == "" || page == "" {
+		payments, err := object.GetVerifications(owner)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+
+		c.ResponseOk(payments)
+	} else {
+		limit := util.ParseInt(limit)
+		count, err := object.GetVerificationCount(owner, field, value)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+
+		paginator := pagination.SetPaginator(c.Ctx, limit, count)
+		payments, err := object.GetPaginationVerifications(owner, paginator.Offset(), limit, field, value, sortField, sortOrder)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+
+		c.ResponseOk(payments, paginator.Nums())
+	}
+}
+
+// GetUserVerifications
+// @Title GetUserVerifications
+// @Tag Verification API
+// @Description get payments for a user
+// @Param   owner     query    string  true        "The owner of payments"
+// @Param   organization    query   string  true   "The organization of the user"
+// @Param   user    query   string  true           "The username of the user"
+// @Success 200 {array} object.Verification The Response object
+// @router /get-user-payments [get]
+func (c *ApiController) GetUserVerifications() {
+	owner := c.Input().Get("owner")
+	user := c.Input().Get("user")
+
+	payments, err := object.GetUserVerifications(owner, user)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	c.ResponseOk(payments)
+}
+
+// GetVerification
+// @Title GetVerification
+// @Tag Verification API
+// @Description get payment
+// @Param   id     query    string  true        "The id ( owner/name ) of the payment"
+// @Success 200 {object} object.Verification The Response object
+// @router /get-payment [get]
+func (c *ApiController) GetVerification() {
+	id := c.Input().Get("id")
+
+	payment, err := object.GetVerification(id)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
+	c.ResponseOk(payment)
+}
+
 // SendVerificationCode ...
 // @Title SendVerificationCode
 // @Tag Verification API
 // @router /send-verification-code [post]
+// @Success 200 {object} object.Userinfo The Response object
 func (c *ApiController) SendVerificationCode() {
 	var vform form.VerificationForm
 	err := c.ParseForm(&vform)
@@ -46,7 +132,8 @@ func (c *ApiController) SendVerificationCode() {
 		c.ResponseError(err.Error())
 		return
 	}
-	remoteAddr := util.GetIPFromRequest(c.Ctx.Request)
+
+	clientIp := util.GetClientIpFromRequest(c.Ctx.Request)
 
 	if msg := vform.CheckParameter(form.SendVerifyCode, c.GetAcceptLanguage()); msg != "" {
 		c.ResponseError(msg)
@@ -108,6 +195,15 @@ func (c *ApiController) SendVerificationCode() {
 			c.ResponseError(err.Error())
 			return
 		}
+		if user == nil || user.IsDeleted {
+			c.ResponseError(c.T("verification:the user does not exist, please sign up first"))
+			return
+		}
+
+		if user.IsForbidden {
+			c.ResponseError(c.T("check:The user is forbidden to sign in, please contact the administrator"))
+			return
+		}
 	}
 
 	// mfaUserSession != "", means method is MfaAuthVerification
@@ -150,21 +246,19 @@ func (c *ApiController) SendVerificationCode() {
 			if user != nil && util.GetMaskedEmail(mfaProps.Secret) == vform.Dest {
 				vform.Dest = mfaProps.Secret
 			}
-		} else if vform.Method == MfaSetupVerification {
-			c.SetSession(object.MfaDestSession, vform.Dest)
 		}
 
-		provider, err := application.GetEmailProvider()
+		provider, err = application.GetEmailProvider(vform.Method)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
 		}
 		if provider == nil {
-			c.ResponseError(fmt.Sprintf("please add an Email provider to the \"Providers\" list for the application: %s", application.Name))
+			c.ResponseError(fmt.Sprintf(c.T("verification:please add an Email provider to the \"Providers\" list for the application: %s"), application.Name))
 			return
 		}
 
-		sendResp = object.SendVerificationCodeToEmail(organization, user, provider, remoteAddr, vform.Dest)
+		sendResp = object.SendVerificationCodeToEmail(organization, user, provider, clientIp, vform.Dest)
 	case object.VerifyTypePhone:
 		if vform.Method == LoginVerification || vform.Method == ForgetVerification {
 			if user != nil && util.GetMaskedPhone(user.Phone) == vform.Dest {
@@ -186,11 +280,6 @@ func (c *ApiController) SendVerificationCode() {
 					vform.CountryCode = user.GetCountryCode(vform.CountryCode)
 				}
 			}
-
-			if vform.Method == MfaSetupVerification {
-				c.SetSession(object.MfaCountryCodeSession, vform.CountryCode)
-				c.SetSession(object.MfaDestSession, vform.Dest)
-			}
 		} else if vform.Method == MfaAuthVerification {
 			mfaProps := user.GetPreferredMfaProps(false)
 			if user != nil && util.GetMaskedPhone(mfaProps.Secret) == vform.Dest {
@@ -198,15 +287,16 @@ func (c *ApiController) SendVerificationCode() {
 			}
 
 			vform.CountryCode = mfaProps.CountryCode
+			vform.CountryCode = user.GetCountryCode(vform.CountryCode)
 		}
 
-		provider, err := application.GetSmsProvider()
+		provider, err = application.GetSmsProvider(vform.Method, vform.CountryCode)
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
 		}
 		if provider == nil {
-			c.ResponseError(fmt.Sprintf("please add a SMS provider to the \"Providers\" list for the application: %s", application.Name))
+			c.ResponseError(fmt.Sprintf(c.T("verification:please add a SMS provider to the \"Providers\" list for the application: %s"), application.Name))
 			return
 		}
 
@@ -214,7 +304,7 @@ func (c *ApiController) SendVerificationCode() {
 			c.ResponseError(fmt.Sprintf(c.T("verification:Phone number is invalid in your region %s"), vform.CountryCode))
 			return
 		} else {
-			sendResp = object.SendVerificationCodeToPhone(organization, user, provider, remoteAddr, phone)
+			sendResp = object.SendVerificationCodeToPhone(organization, user, provider, clientIp, phone)
 		}
 	}
 
@@ -229,6 +319,7 @@ func (c *ApiController) SendVerificationCode() {
 // @Title VerifyCaptcha
 // @Tag Verification API
 // @router /verify-captcha [post]
+// @Success 200 {object} object.Userinfo The Response object
 func (c *ApiController) VerifyCaptcha() {
 	var vform form.VerificationForm
 	err := c.ParseForm(&vform)
@@ -270,7 +361,8 @@ func (c *ApiController) VerifyCaptcha() {
 // ResetEmailOrPhone ...
 // @Tag Account API
 // @Title ResetEmailOrPhone
-// @router /api/reset-email-or-phone [post]
+// @router /reset-email-or-phone [post]
+// @Success 200 {object} object.Userinfo The Response object
 func (c *ApiController) ResetEmailOrPhone() {
 	user, ok := c.RequireSignedInUser()
 	if !ok {
@@ -331,7 +423,12 @@ func (c *ApiController) ResetEmailOrPhone() {
 		}
 	}
 
-	if result := object.CheckVerificationCode(checkDest, code, c.GetAcceptLanguage()); result.Code != object.VerificationSuccess {
+	result, err := object.CheckVerificationCode(checkDest, code, c.GetAcceptLanguage())
+	if err != nil {
+		c.ResponseError(c.T(err.Error()))
+		return
+	}
+	if result.Code != object.VerificationSuccess {
 		c.ResponseError(result.Msg)
 		return
 	}
@@ -364,7 +461,8 @@ func (c *ApiController) ResetEmailOrPhone() {
 // VerifyCode
 // @Tag Verification API
 // @Title VerifyCode
-// @router /api/verify-code [post]
+// @router /verify-code [post]
+// @Success 200 {object} object.Userinfo The Response object
 func (c *ApiController) VerifyCode() {
 	var authForm form.AuthForm
 	err := json.Unmarshal(c.Ctx.Input.RequestBody, &authForm)
@@ -412,16 +510,31 @@ func (c *ApiController) VerifyCode() {
 		}
 	}
 
-	if result := object.CheckVerificationCode(checkDest, authForm.Code, c.GetAcceptLanguage()); result.Code != object.VerificationSuccess {
-		c.ResponseError(result.Msg)
-		return
-	}
-	err = object.DisableVerificationCode(checkDest)
+	passed, err := c.checkOrgMasterVerificationCode(user, authForm.Code)
 	if err != nil {
-		c.ResponseError(err.Error())
+		c.ResponseError(c.T(err.Error()))
 		return
 	}
-	c.SetSession("verifiedCode", authForm.Code)
 
+	if !passed {
+		result, err := object.CheckVerificationCode(checkDest, authForm.Code, c.GetAcceptLanguage())
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+		if result.Code != object.VerificationSuccess {
+			c.ResponseError(result.Msg)
+			return
+		}
+
+		err = object.DisableVerificationCode(checkDest)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+	}
+
+	c.SetSession("verifiedCode", authForm.Code)
+	c.SetSession("verifiedUserId", user.GetId())
 	c.ResponseOk()
 }

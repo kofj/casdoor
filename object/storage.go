@@ -30,6 +30,13 @@ import (
 
 var isCloudIntranet bool
 
+const (
+	ProviderTypeGoogleCloudStorage = "Google Cloud Storage"
+	ProviderTypeTencentCloudCOS    = "Tencent Cloud COS"
+	ProviderTypeAzureBlob          = "Azure Blob"
+	ProviderTypeLocalFileSystem    = "Local File System"
+)
+
 func init() {
 	isCloudIntranet = conf.GetConfigBool("isCloudIntranet")
 }
@@ -72,31 +79,36 @@ func GetTruncatedPath(provider *Provider, fullFilePath string, limit int) string
 }
 
 func GetUploadFileUrl(provider *Provider, fullFilePath string, hasTimestamp bool) (string, string) {
+	if provider.Domain != "" && !strings.HasPrefix(provider.Domain, "http://") && !strings.HasPrefix(provider.Domain, "https://") {
+		provider.Domain = fmt.Sprintf("https://%s", provider.Domain)
+	}
+
 	escapedPath := util.UrlJoin(provider.PathPrefix, fullFilePath)
 	objectKey := util.UrlJoin(util.GetUrlPath(provider.Domain), escapedPath)
 
 	host := ""
-	if provider.Type != "Local File System" {
+	if provider.Type != ProviderTypeLocalFileSystem {
 		// provider.Domain = "https://cdn.casbin.com/casdoor/"
 		host = util.GetUrlHost(provider.Domain)
-		if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
-			host = fmt.Sprintf("https://%s", host)
-		}
 	} else {
 		// provider.Domain = "http://localhost:8000" or "https://door.casdoor.com"
 		host = util.UrlJoin(provider.Domain, "/files")
 	}
-	if provider.Type == "Azure Blob" {
+	if provider.Type == ProviderTypeAzureBlob || provider.Type == ProviderTypeGoogleCloudStorage {
 		host = util.UrlJoin(host, provider.Bucket)
 	}
 
-	fileUrl := util.UrlJoin(host, escapePath(objectKey))
-
-	if hasTimestamp {
-		fileUrl = fmt.Sprintf("%s?t=%s", fileUrl, util.GetCurrentUnixTime())
+	fileUrl := ""
+	if host != "" {
+		// fileUrl = util.UrlJoin(host, escapePath(objectKey))
+		fileUrl = util.UrlJoin(host, objectKey)
 	}
 
-	if provider.Type == "Tencent Cloud COS" {
+	// if fileUrl != "" && hasTimestamp {
+	//	fileUrl = fmt.Sprintf("%s?t=%s", fileUrl, util.GetCurrentUnixTime())
+	// }
+
+	if provider.Type == ProviderTypeTencentCloudCOS {
 		objectKey = escapePath(objectKey)
 	}
 
@@ -105,14 +117,28 @@ func GetUploadFileUrl(provider *Provider, fullFilePath string, hasTimestamp bool
 
 func getStorageProvider(provider *Provider, lang string) (oss.StorageInterface, error) {
 	endpoint := getProviderEndpoint(provider)
-	storageProvider := storage.GetStorageProvider(provider.Type, provider.ClientId, provider.ClientSecret, provider.RegionId, provider.Bucket, endpoint)
+	certificate := ""
+	if provider.Category == "Storage" && provider.Type == "Casdoor" {
+		cert, err := GetCert(util.GetId(provider.Owner, provider.Cert))
+		if err != nil {
+			return nil, err
+		}
+		if cert == nil {
+			return nil, fmt.Errorf("no cert for %s", provider.Cert)
+		}
+		certificate = cert.Certificate
+	}
+	storageProvider, err := storage.GetStorageProvider(provider.Type, provider.ClientId, provider.ClientSecret, provider.RegionId, provider.Bucket, endpoint, certificate, provider.Content)
+	if err != nil {
+		return nil, err
+	}
 	if storageProvider == nil {
 		return nil, fmt.Errorf(i18n.Translate(lang, "storage:The provider type: %s is not supported"), provider.Type)
 	}
 
 	if provider.Domain == "" {
 		provider.Domain = storageProvider.GetEndpoint()
-		_, err := UpdateProvider(provider.GetId(), provider)
+		_, err = UpdateProvider(provider.GetId(), provider)
 		if err != nil {
 			return nil, err
 		}
@@ -128,15 +154,15 @@ func uploadFile(provider *Provider, fullFilePath string, fileBuffer *bytes.Buffe
 	}
 
 	fileUrl, objectKey := GetUploadFileUrl(provider, fullFilePath, true)
+	objectKeyRefined := refineObjectKey(provider, objectKey)
 
-	objectKeyRefined := objectKey
-	if provider.Type == "Google Cloud Storage" {
-		objectKeyRefined = strings.TrimPrefix(objectKeyRefined, "/")
-	}
-
-	_, err = storageProvider.Put(objectKeyRefined, fileBuffer)
+	object, err := storageProvider.Put(objectKeyRefined, fileBuffer)
 	if err != nil {
 		return "", "", err
+	}
+
+	if provider.Type == "Casdoor" {
+		fileUrl = object.Path
 	}
 
 	return fileUrl, objectKey, nil
@@ -177,5 +203,13 @@ func DeleteFile(provider *Provider, objectKey string, lang string) error {
 		return err
 	}
 
-	return storageProvider.Delete(objectKey)
+	objectKeyRefined := refineObjectKey(provider, objectKey)
+	return storageProvider.Delete(objectKeyRefined)
+}
+
+func refineObjectKey(provider *Provider, objectKey string) string {
+	if provider.Type == ProviderTypeGoogleCloudStorage {
+		return strings.TrimPrefix(objectKey, "/")
+	}
+	return objectKey
 }

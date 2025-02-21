@@ -38,12 +38,57 @@ func (application *Application) GetProviderByCategory(category string) (*Provide
 	return nil, nil
 }
 
-func (application *Application) GetEmailProvider() (*Provider, error) {
-	return application.GetProviderByCategory("Email")
+func isProviderItemCountryCodeMatched(providerItem *ProviderItem, countryCode string) bool {
+	if len(providerItem.CountryCodes) == 0 {
+		return true
+	}
+
+	for _, countryCode2 := range providerItem.CountryCodes {
+		if countryCode2 == "" || countryCode2 == "All" || countryCode2 == "all" || countryCode2 == countryCode {
+			return true
+		}
+	}
+	return false
 }
 
-func (application *Application) GetSmsProvider() (*Provider, error) {
-	return application.GetProviderByCategory("SMS")
+func (application *Application) GetProviderByCategoryAndRule(category string, method string, countryCode string) (*Provider, error) {
+	providers, err := GetProviders(application.Organization)
+	if err != nil {
+		return nil, err
+	}
+
+	m := map[string]*Provider{}
+	for _, provider := range providers {
+		if provider.Category != category {
+			continue
+		}
+
+		m[provider.Name] = provider
+	}
+
+	for _, providerItem := range application.Providers {
+		if providerItem.Provider != nil && providerItem.Provider.Category == "SMS" {
+			if !isProviderItemCountryCodeMatched(providerItem, countryCode) {
+				continue
+			}
+		}
+
+		if providerItem.Rule == method || providerItem.Rule == "" || providerItem.Rule == "All" || providerItem.Rule == "all" || providerItem.Rule == "None" {
+			if provider, ok := m[providerItem.Name]; ok {
+				return provider, nil
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+func (application *Application) GetEmailProvider(method string) (*Provider, error) {
+	return application.GetProviderByCategoryAndRule("Email", method, "All")
+}
+
+func (application *Application) GetSmsProvider(method string, countryCode string) (*Provider, error) {
+	return application.GetProviderByCategoryAndRule("SMS", method, countryCode)
 }
 
 func (application *Application) GetStorageProvider() (*Provider, error) {

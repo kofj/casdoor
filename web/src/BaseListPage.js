@@ -25,6 +25,7 @@ class BaseListPage extends React.Component {
     super(props);
     this.state = {
       classes: props,
+      organizationName: this.props.match?.params.organizationName || Setting.getRequestOrganization(this.props.account),
       data: [],
       pagination: {
         current: 1,
@@ -39,6 +40,10 @@ class BaseListPage extends React.Component {
   }
 
   handleOrganizationChange = () => {
+    this.setState({
+      organizationName: this.props.match?.params.organizationName || Setting.getRequestOrganization(this.props.account),
+    });
+
     const {pagination} = this.state;
     this.fetch({pagination});
   };
@@ -68,7 +73,7 @@ class BaseListPage extends React.Component {
     this.fetch({pagination});
   }
 
-  getColumnSearchProps = dataIndex => ({
+  getColumnSearchProps = (dataIndex, customRender = null) => ({
     filterDropdown: ({setSelectedKeys, selectedKeys, confirm, clearFilters}) => (
       <div style={{padding: 8}}>
         <Input
@@ -116,13 +121,15 @@ class BaseListPage extends React.Component {
       record[dataIndex]
         ? record[dataIndex].toString().toLowerCase().includes(value.toLowerCase())
         : "",
-    onFilterDropdownOpenChange: visible => {
-      if (visible) {
-        setTimeout(() => this.searchInput.select(), 100);
-      }
+    filterDropdownProps: {
+      onOpenChange: visible => {
+        if (visible) {
+          setTimeout(() => this.searchInput.select(), 100);
+        }
+      },
     },
-    render: text =>
-      this.state.searchedColumn === dataIndex ? (
+    render: (text, record, index) => {
+      const highlightContent = this.state.searchedColumn === dataIndex ? (
         <Highlighter
           highlightStyle={{backgroundColor: "#ffc069", padding: 0}}
           searchWords={[this.state.searchText]}
@@ -131,7 +138,10 @@ class BaseListPage extends React.Component {
         />
       ) : (
         text
-      ),
+      );
+
+      return customRender ? customRender({text, record, index}, highlightContent) : highlightContent;
+    },
   });
 
   handleSearch = (selectedKeys, confirm, dataIndex) => {
@@ -165,7 +175,7 @@ class BaseListPage extends React.Component {
     const steps = TourConfig.getSteps();
     steps.map((item, index) => {
       if (!index) {
-        item.target = () => document.querySelector("table");
+        item.target = () => document.querySelector(".ant-table");
       } else {
         item.target = () => document.getElementById(item.id) || null;
       }

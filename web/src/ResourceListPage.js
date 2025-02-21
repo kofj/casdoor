@@ -40,9 +40,11 @@ class ResourceListPage extends BaseListPage {
       .then((res) => {
         if (res.status === "ok") {
           Setting.showMessage("success", i18next.t("general:Successfully deleted"));
-          this.setState({
-            data: Setting.deleteRow(this.state.data, i),
-            pagination: {total: this.state.pagination.total - 1},
+          this.fetch({
+            pagination: {
+              ...this.state.pagination,
+              current: this.state.pagination.current > 1 && this.state.data.length === 1 ? this.state.pagination.current - 1 : this.state.pagination.current,
+            },
           });
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
@@ -124,7 +126,7 @@ class ResourceListPage extends BaseListPage {
         ...this.getColumnSearchProps("application"),
         render: (text, record, index) => {
           return (
-            <Link to={`/applications/${record.organization}/${text}`}>
+            <Link to={`/applications/${record.owner}/${text}`}>
               {text}
             </Link>
           );
@@ -248,7 +250,7 @@ class ResourceListPage extends BaseListPage {
             <div>
               <Button onClick={() => {
                 copy(record.url);
-                Setting.showMessage("success", i18next.t("provider:Link copied to clipboard successfully"));
+                Setting.showMessage("success", i18next.t("general:Copied to clipboard successfully"));
               }}
               >
                 {i18next.t("resource:Copy Link")}

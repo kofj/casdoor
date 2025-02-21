@@ -32,16 +32,31 @@ const Dashboard = (props) => {
   }, []);
 
   React.useEffect(() => {
+    window.addEventListener("storageOrganizationChanged", handleOrganizationChange);
+    return () => window.removeEventListener("storageOrganizationChanged", handleOrganizationChange);
+  }, [props.owner]);
+
+  React.useEffect(() => {
     if (!Setting.isLocalAdminUser(props.account)) {
       props.history.push("/apps");
     }
   }, [props.account]);
 
+  const getOrganizationName = () => {
+    let organization = localStorage.getItem("organization") === "All" ? "" : localStorage.getItem("organization");
+    if (!Setting.isAdminUser(props.account) && Setting.isLocalAdminUser(props.account)) {
+      organization = props.account.owner;
+    }
+    return organization;
+  };
+
   React.useEffect(() => {
     if (!Setting.isLocalAdminUser(props.account)) {
       return;
     }
-    DashboardBackend.getDashboard(props.account.owner).then((res) => {
+
+    const organization = getOrganizationName();
+    DashboardBackend.getDashboard(organization).then((res) => {
       if (res.status === "ok") {
         setDashboardData(res.data);
       } else {
@@ -52,6 +67,21 @@ const Dashboard = (props) => {
 
   const handleTourChange = () => {
     setIsTourVisible(TourConfig.getTourVisible());
+  };
+
+  const handleOrganizationChange = () => {
+    if (!Setting.isLocalAdminUser(props.account)) {
+      return;
+    }
+
+    const organization = getOrganizationName();
+    DashboardBackend.getDashboard(organization).then((res) => {
+      if (res.status === "ok") {
+        setDashboardData(res.data);
+      } else {
+        Setting.showMessage("error", res.msg);
+      }
+    });
   };
 
   const setIsTourToLocal = () => {
@@ -105,6 +135,15 @@ const Dashboard = (props) => {
         i18next.t("general:Applications"),
         i18next.t("general:Organizations"),
         i18next.t("general:Subscriptions"),
+        i18next.t("general:Roles"),
+        i18next.t("general:Groups"),
+        i18next.t("general:Resources"),
+        i18next.t("general:Certs"),
+        i18next.t("general:Permissions"),
+        i18next.t("general:Transactions"),
+        i18next.t("general:Models"),
+        i18next.t("general:Adapters"),
+        i18next.t("general:Enforcers"),
       ], top: "10%"},
       grid: {left: "3%", right: "4%", bottom: "0", top: "25%", containLabel: true},
       xAxis: {type: "category", boundaryGap: false, data: dateArray},
@@ -115,29 +154,48 @@ const Dashboard = (props) => {
         {name: i18next.t("general:Providers"), type: "line", data: dashboardData.providerCounts},
         {name: i18next.t("general:Applications"), type: "line", data: dashboardData.applicationCounts},
         {name: i18next.t("general:Subscriptions"), type: "line", data: dashboardData.subscriptionCounts},
+        {name: i18next.t("general:Roles"), type: "line", data: dashboardData.roleCounts},
+        {name: i18next.t("general:Groups"), type: "line", data: dashboardData.groupCounts},
+        {name: i18next.t("general:Resources"), type: "line", data: dashboardData.resourceCounts},
+        {name: i18next.t("general:Certs"), type: "line", data: dashboardData.certCounts},
+        {name: i18next.t("general:Permissions"), type: "line", data: dashboardData.permissionCounts},
+        {name: i18next.t("general:Transactions"), type: "line", data: dashboardData.transactionCounts},
+        {name: i18next.t("general:Models"), type: "line", data: dashboardData.modelCounts},
+        {name: i18next.t("general:Adapters"), type: "line", data: dashboardData.adapterCounts},
+        {name: i18next.t("general:Enforcers"), type: "line", data: dashboardData.enforcerCounts},
       ],
     };
     myChart.setOption(option);
 
+    const cardStyles = {
+      body: {
+        width: Setting.isMobile() ? "340px" : "100%",
+        height: Setting.isMobile() ? "100px" : "150px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+    };
+
     return (
       <Row id="statistic" gutter={80} justify={"center"}>
         <Col span={50} style={{marginBottom: "10px"}}>
-          <Card bordered={false} bodyStyle={{width: Setting.isMobile() ? "340px" : "100%", height: Setting.isMobile() ? "100px" : "150px", display: "flex", alignItems: "center", justifyContent: "center"}}>
+          <Card variant="borderless" styles={cardStyles}>
             <Statistic title={i18next.t("home:Total users")} fontSize="100px" value={dashboardData.userCounts[30]} valueStyle={{fontSize: "30px"}} style={{width: "200px", paddingLeft: "10px"}} />
           </Card>
         </Col>
         <Col span={50} style={{marginBottom: "10px"}}>
-          <Card bordered={false} bodyStyle={{width: Setting.isMobile() ? "340px" : "100%", height: Setting.isMobile() ? "100px" : "150px", display: "flex", alignItems: "center", justifyContent: "center"}}>
+          <Card variant="borderless" styles={cardStyles}>
             <Statistic title={i18next.t("home:New users today")} fontSize="100px" value={dashboardData.userCounts[30] - dashboardData.userCounts[30 - 1]} valueStyle={{fontSize: "30px"}} prefix={<ArrowUpOutlined />} style={{width: "200px", paddingLeft: "10px"}} />
           </Card>
         </Col>
         <Col span={50} style={{marginBottom: "10px"}}>
-          <Card bordered={false} bodyStyle={{width: Setting.isMobile() ? "340px" : "100%", height: Setting.isMobile() ? "100px" : "150px", display: "flex", alignItems: "center", justifyContent: "center"}}>
+          <Card variant="borderless" styles={cardStyles}>
             <Statistic title={i18next.t("home:New users past 7 days")} value={dashboardData.userCounts[30] - dashboardData.userCounts[30 - 7]} valueStyle={{fontSize: "30px"}} prefix={<ArrowUpOutlined />} style={{width: "200px", paddingLeft: "10px"}} />
           </Card>
         </Col>
         <Col span={50} style={{marginBottom: "10px"}}>
-          <Card bordered={false} bodyStyle={{width: Setting.isMobile() ? "340px" : "100%", height: Setting.isMobile() ? "100px" : "150px", display: "flex", alignItems: "center", justifyContent: "center"}}>
+          <Card variant="borderless" styles={cardStyles}>
             <Statistic title={i18next.t("home:New users past 30 days")} value={dashboardData.userCounts[30] - dashboardData.userCounts[30 - 30]} valueStyle={{fontSize: "30px"}} prefix={<ArrowUpOutlined />} style={{width: "200px", paddingLeft: "10px"}} />
           </Card>
         </Col>

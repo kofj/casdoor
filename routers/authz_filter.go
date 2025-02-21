@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/casdoor/casdoor/object"
+
 	"github.com/beego/beego/context"
 	"github.com/casdoor/casdoor/authz"
 	"github.com/casdoor/casdoor/util"
@@ -33,20 +35,13 @@ type Object struct {
 }
 
 func getUsername(ctx *context.Context) (username string) {
-	defer func() {
-		if r := recover(); r != nil {
-			username, _ = getUsernameByClientIdSecret(ctx)
-		}
-	}()
-
-	username = ctx.Input.Session("username").(string)
-
-	if username == "" {
+	username, ok := ctx.Input.Session("username").(string)
+	if !ok || username == "" {
 		username, _ = getUsernameByClientIdSecret(ctx)
 	}
 
 	if username == "" {
-		username = getUsernameByKeys(ctx)
+		username, _ = getUsernameByKeys(ctx)
 	}
 	return
 }
@@ -61,48 +56,58 @@ func getSubject(ctx *context.Context) (string, string) {
 	return util.GetOwnerAndNameFromId(username)
 }
 
-func getObject(ctx *context.Context) (string, string) {
+func getObject(ctx *context.Context) (string, string, error) {
 	method := ctx.Request.Method
 	path := ctx.Request.URL.Path
 
 	if method == http.MethodGet {
-		if ctx.Request.URL.Path == "/api/get-policies" && ctx.Input.Query("id") == "/" {
-			adapterId := ctx.Input.Query("adapterId")
-			if adapterId != "" {
-				return util.GetOwnerAndNameFromIdNoCheck(adapterId)
+		if ctx.Request.URL.Path == "/api/get-policies" {
+			if ctx.Input.Query("id") == "/" {
+				adapterId := ctx.Input.Query("adapterId")
+				if adapterId != "" {
+					return util.GetOwnerAndNameFromIdWithError(adapterId)
+				}
+			} else {
+				// query == "?id=built-in/admin"
+				id := ctx.Input.Query("id")
+				if id != "" {
+					return util.GetOwnerAndNameFromIdWithError(id)
+				}
 			}
 		}
 
-		// query == "?id=built-in/admin"
-		id := ctx.Input.Query("id")
-		if id != "" {
-			return util.GetOwnerAndNameFromIdNoCheck(id)
+		if !(strings.HasPrefix(ctx.Request.URL.Path, "/api/get-") && strings.HasSuffix(ctx.Request.URL.Path, "s")) {
+			// query == "?id=built-in/admin"
+			id := ctx.Input.Query("id")
+			if id != "" {
+				return util.GetOwnerAndNameFromIdWithError(id)
+			}
 		}
 
 		owner := ctx.Input.Query("owner")
 		if owner != "" {
-			return owner, ""
+			return owner, "", nil
 		}
 
-		return "", ""
+		return "", "", nil
 	} else {
 		if path == "/api/add-policy" || path == "/api/remove-policy" || path == "/api/update-policy" {
 			id := ctx.Input.Query("id")
 			if id != "" {
-				return util.GetOwnerAndNameFromIdNoCheck(id)
+				return util.GetOwnerAndNameFromIdWithError(id)
 			}
 		}
 
 		body := ctx.Input.RequestBody
 		if len(body) == 0 {
-			return ctx.Request.Form.Get("owner"), ctx.Request.Form.Get("name")
+			return ctx.Request.Form.Get("owner"), ctx.Request.Form.Get("name"), nil
 		}
 
 		var obj Object
 		err := json.Unmarshal(body, &obj)
 		if err != nil {
-			// panic(err)
-			return "", ""
+			// this is not error
+			return "", "", nil
 		}
 
 		if path == "/api/delete-resource" {
@@ -112,7 +117,7 @@ func getObject(ctx *context.Context) (string, string) {
 			}
 		}
 
-		return obj.Owner, obj.Name
+		return obj.Owner, obj.Name, nil
 	}
 }
 
@@ -164,6 +169,10 @@ func getUrlPath(urlPath string) string {
 		return "/api/webauthn"
 	}
 
+	if strings.HasPrefix(urlPath, "/api/saml/redirect") {
+		return "/api/saml/redirect"
+	}
+
 	return urlPath
 }
 
@@ -174,7 +183,12 @@ func ApiFilter(ctx *context.Context) {
 
 	objOwner, objName := "", ""
 	if urlPath != "/api/get-app-login" && urlPath != "/api/get-resource" {
-		objOwner, objName = getObject(ctx)
+		var err error
+		objOwner, objName, err = getObject(ctx)
+		if err != nil {
+			responseError(ctx, err.Error())
+			return
+		}
 	}
 
 	if strings.HasPrefix(urlPath, "/api/notify-payment") {
@@ -197,5 +211,17 @@ func ApiFilter(ctx *context.Context) {
 
 	if !isAllowed {
 		denyRequest(ctx)
+		record, err := object.NewRecord(ctx)
+		if err != nil {
+			return
+		}
+
+		record.Organization = subOwner
+		record.User = subName // auth:Unauthorized operation
+		record.Response = fmt.Sprintf("{status:\"error\", msg:\"%s\"}", T(ctx, "auth:Unauthorized operation"))
+
+		util.SafeGoroutine(func() {
+			object.AddRecord(record)
+		})
 	}
 }

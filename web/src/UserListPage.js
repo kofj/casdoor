@@ -30,7 +30,6 @@ class UserListPage extends BaseListPage {
     super(props);
     this.state = {
       ...this.state,
-      organizationName: this.props.organizationName ?? this.props.match?.params.organizationName ?? this.props.account.owner,
       organization: null,
     };
   }
@@ -62,7 +61,7 @@ class UserListPage extends BaseListPage {
 
   newUser() {
     const randomName = Setting.getRandomName();
-    const owner = Setting.isDefaultOrganizationSelected(this.props.account) ? this.state.organizationName : Setting.getRequestOrganization(this.props.account);
+    const owner = (Setting.isDefaultOrganizationSelected(this.props.account) || this.props.groupName) ? this.state.organizationName : Setting.getRequestOrganization(this.props.account);
     return {
       owner: owner,
       name: `user_${randomName}`,
@@ -71,7 +70,7 @@ class UserListPage extends BaseListPage {
       password: "123",
       passwordSalt: "",
       displayName: `New User - ${randomName}`,
-      avatar: `${Setting.StaticBaseUrl}/img/casbin.svg`,
+      avatar: this.state.organization.defaultAvatar ?? `${Setting.StaticBaseUrl}/img/casbin.svg`,
       email: `${randomName}@example.com`,
       phone: Setting.getRandomNumber(),
       countryCode: this.state.organization.countryCodes?.length > 0 ? this.state.organization.countryCodes[0] : "",
@@ -85,7 +84,7 @@ class UserListPage extends BaseListPage {
       score: this.state.organization.initScore,
       isDeleted: false,
       properties: {},
-      signupApplication: "app-built-in",
+      signupApplication: this.state.organization.defaultApplication,
     };
   }
 
@@ -111,9 +110,11 @@ class UserListPage extends BaseListPage {
       .then((res) => {
         if (res.status === "ok") {
           Setting.showMessage("success", i18next.t("general:Successfully deleted"));
-          this.setState({
-            data: Setting.deleteRow(this.state.data, i),
-            pagination: {total: this.state.pagination.total - 1},
+          this.fetch({
+            pagination: {
+              ...this.state.pagination,
+              current: this.state.pagination.current > 1 && this.state.data.length === 1 ? this.state.pagination.current - 1 : this.state.pagination.current,
+            },
           });
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
@@ -187,8 +188,8 @@ class UserListPage extends BaseListPage {
 
     return (
       <Upload {...props}>
-        <Button id="upload-button" type="primary" size="small">
-          <UploadOutlined /> {i18next.t("user:Upload (.xlsx)")}
+        <Button icon={<UploadOutlined />} id="upload-button" type="primary" size="small">
+          {i18next.t("user:Upload (.xlsx)")}
         </Button>
       </Upload>
     );
@@ -318,6 +319,14 @@ class UserListPage extends BaseListPage {
         },
       },
       {
+        title: i18next.t("general:User type"),
+        dataIndex: "type",
+        key: "type",
+        width: "120px",
+        sorter: true,
+        ...this.getColumnSearchProps("type"),
+      },
+      {
         title: i18next.t("user:Tag"),
         dataIndex: "tag",
         key: "tag",
@@ -325,6 +334,10 @@ class UserListPage extends BaseListPage {
         sorter: true,
         ...this.getColumnSearchProps("tag"),
         render: (text, record, index) => {
+          if (this.state.organization?.tags?.length === 0) {
+            return text;
+          }
+
           const tagMap = {};
           this.state.organization?.tags?.map((tag, index) => {
             const tokens = tag.split("|");
@@ -338,7 +351,7 @@ class UserListPage extends BaseListPage {
         title: i18next.t("user:Is admin"),
         dataIndex: "isAdmin",
         key: "isAdmin",
-        width: "110px",
+        width: "120px",
         sorter: true,
         render: (text, record, index) => {
           return (

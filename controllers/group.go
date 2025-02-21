@@ -43,13 +43,20 @@ func (c *ApiController) GetGroups() {
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
-		} else {
-			if withTree == "true" {
-				c.ResponseOk(object.ConvertToTreeData(groups, owner))
-				return
-			}
-			c.ResponseOk(groups)
 		}
+
+		err = object.ExtendGroupsWithUsers(groups)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+
+		if withTree == "true" {
+			c.ResponseOk(object.ConvertToTreeData(groups, owner))
+			return
+		}
+
+		c.ResponseOk(groups)
 	} else {
 		limit := util.ParseInt(limit)
 		count, err := object.GetGroupCount(owner, field, value)
@@ -63,9 +70,33 @@ func (c *ApiController) GetGroups() {
 		if err != nil {
 			c.ResponseError(err.Error())
 			return
-		} else {
-			c.ResponseOk(groups, paginator.Nums())
 		}
+		groupsHaveChildrenMap, err := object.GetGroupsHaveChildrenMap(groups)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+
+		for _, group := range groups {
+			_, ok := groupsHaveChildrenMap[group.Name]
+			if ok {
+				group.HaveChildren = true
+			}
+
+			parent, ok := groupsHaveChildrenMap[group.ParentId]
+			if ok {
+				group.ParentName = parent.DisplayName
+			}
+		}
+
+		err = object.ExtendGroupsWithUsers(groups)
+		if err != nil {
+			c.ResponseError(err.Error())
+			return
+		}
+
+		c.ResponseOk(groups, paginator.Nums())
+
 	}
 }
 
@@ -84,6 +115,13 @@ func (c *ApiController) GetGroup() {
 		c.ResponseError(err.Error())
 		return
 	}
+
+	err = object.ExtendGroupWithUsers(group)
+	if err != nil {
+		c.ResponseError(err.Error())
+		return
+	}
+
 	c.ResponseOk(group)
 }
 

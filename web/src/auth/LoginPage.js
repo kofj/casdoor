@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React from "react";
-import {Button, Checkbox, Col, Form, Input, Result, Row, Spin, Tabs} from "antd";
+import React, {Suspense, lazy} from "react";
+import {Button, Checkbox, Col, Form, Input, Result, Spin, Tabs, message} from "antd";
 import {ArrowLeftOutlined, LockOutlined, UserOutlined} from "@ant-design/icons";
 import {withRouter} from "react-router-dom";
 import * as UserWebauthnBackend from "../backend/UserWebauthnBackend";
 import OrganizationSelect from "../common/select/OrganizationSelect";
 import * as Conf from "../Conf";
+import * as Obfuscator from "./Obfuscator";
 import * as AuthBackend from "./AuthBackend";
 import * as OrganizationBackend from "../backend/OrganizationBackend";
 import * as ApplicationBackend from "../backend/ApplicationBackend";
 import * as Provider from "./Provider";
-import * as ProviderButton from "./ProviderButton";
 import * as Util from "./Util";
 import * as Setting from "../Setting";
 import * as AgreementModal from "../common/modal/AgreementModal";
@@ -32,11 +32,13 @@ import i18next from "i18next";
 import CustomGithubCorner from "../common/CustomGithubCorner";
 import {SendCodeInput} from "../common/SendCodeInput";
 import LanguageSelect from "../common/select/LanguageSelect";
-import {CaptchaModal} from "../common/modal/CaptchaModal";
-import {CaptchaRule} from "../common/modal/CaptchaModal";
+import {CaptchaModal, CaptchaRule} from "../common/modal/CaptchaModal";
 import RedirectForm from "../common/RedirectForm";
-import {MfaAuthVerifyForm, NextMfa, RequiredMfa} from "./mfa/MfaAuthVerifyForm";
+import {RequiredMfa} from "./mfa/MfaAuthVerifyForm";
 import {GoogleOneTapLoginVirtualButton} from "./GoogleLoginButton";
+import * as ProviderButton from "./ProviderButton";
+const FaceRecognitionModal = lazy(() => import("../common/modal/FaceRecognitionModal"));
+
 class LoginPage extends React.Component {
   constructor(props) {
     super(props);
@@ -50,8 +52,8 @@ class LoginPage extends React.Component {
       username: null,
       validEmailOrPhone: false,
       validEmail: false,
-      enableCaptchaModal: CaptchaRule.Never,
       openCaptchaModal: false,
+      openFaceRecognitionModal: false,
       verifyCaptcha: undefined,
       samlResponse: "",
       relayState: "",
@@ -65,6 +67,8 @@ class LoginPage extends React.Component {
       this.state.owner = props.match?.params?.owner;
       this.state.applicationName = props.match?.params?.casApplicationName;
     }
+
+    localStorage.setItem("signinUrl", window.location.pathname + window.location.search);
 
     this.form = React.createRef();
   }
@@ -88,17 +92,6 @@ class LoginPage extends React.Component {
     }
     if (prevProps.application !== this.props.application) {
       this.setState({loginMethod: this.getDefaultLoginMethod(this.props.application)});
-
-      const captchaProviderItems = this.getCaptchaProviderItems(this.props.application);
-      if (captchaProviderItems) {
-        if (captchaProviderItems.some(providerItem => providerItem.rule === "Always")) {
-          this.setState({enableCaptchaModal: CaptchaRule.Always});
-        } else if (captchaProviderItems.some(providerItem => providerItem.rule === "Dynamic")) {
-          this.setState({enableCaptchaModal: CaptchaRule.Dynamic});
-        } else {
-          this.setState({enableCaptchaModal: CaptchaRule.Never});
-        }
-      }
     }
 
     if (prevProps.account !== this.props.account && this.props.account !== undefined) {
@@ -124,6 +117,19 @@ class LoginPage extends React.Component {
           values["application"] = this.props.application.name;
           this.login(values);
         }
+      }
+    }
+  }
+
+  getCaptchaRule(application) {
+    const captchaProviderItems = this.getCaptchaProviderItems(application);
+    if (captchaProviderItems) {
+      if (captchaProviderItems.some(providerItem => providerItem.rule === "Always")) {
+        return CaptchaRule.Always;
+      } else if (captchaProviderItems.some(providerItem => providerItem.rule === "Dynamic")) {
+        return CaptchaRule.Dynamic;
+      } else {
+        return CaptchaRule.Never;
       }
     }
   }
@@ -201,17 +207,53 @@ class LoginPage extends React.Component {
   }
 
   getDefaultLoginMethod(application) {
-    if (application?.enablePassword) {
-      return "password";
-    }
-    if (application?.enableCodeSignin) {
-      return "verificationCode";
-    }
-    if (application?.enableWebAuthn) {
-      return "webAuthn";
+    if (application?.signinMethods?.length > 0) {
+      switch (application?.signinMethods[0].name) {
+      case "Password": return "password";
+      case "Verification code": {
+        switch (application?.signinMethods[0].rule) {
+        case "All": return "verificationCode"; // All
+        case "Email only": return "verificationCodeEmail";
+        case "Phone only": return "verificationCodePhone";
+        }
+        break;
+      }
+      case "WebAuthn": return "webAuthn";
+      case "LDAP": return "ldap";
+      case "Face ID": return "faceId";
+      }
     }
 
     return "password";
+  }
+
+  getCurrentLoginMethod() {
+    if (this.state.loginMethod === "password") {
+      return "Password";
+    } else if (this.state.loginMethod?.includes("verificationCode")) {
+      return "Verification code";
+    } else if (this.state.loginMethod === "webAuthn") {
+      return "WebAuthn";
+    } else if (this.state.loginMethod === "ldap") {
+      return "LDAP";
+    } else if (this.state.loginMethod === "faceId") {
+      return "Face ID";
+    } else {
+      return "Password";
+    }
+  }
+
+  getPlaceholder(defaultPlaceholder = null) {
+    if (defaultPlaceholder) {
+      return defaultPlaceholder;
+    }
+    switch (this.state.loginMethod) {
+    case "verificationCode": return i18next.t("login:Email or phone");
+    case "verificationCodeEmail": return i18next.t("login:Email");
+    case "verificationCodePhone": return i18next.t("login:Phone");
+    case "ldap": return i18next.t("login:LDAP username, Email or phone");
+    default: return i18next.t("login:username, Email or phone");
+    }
   }
 
   onUpdateAccount(account) {
@@ -239,6 +281,7 @@ class LoginPage extends React.Component {
       values["organization"] = this.getApplicationObj().organization;
     }
 
+    values["signinMethod"] = this.getCurrentLoginMethod();
     const oAuthParams = Util.getOAuthGetParameters();
 
     values["type"] = oAuthParams?.responseType ?? this.state.type;
@@ -267,6 +310,12 @@ class LoginPage extends React.Component {
     const redirectUrl = `${oAuthParams.redirectUri}${concatChar}code=${code}&state=${oAuthParams.state}`;
     if (resp.data === RequiredMfa) {
       this.props.onLoginSuccess(window.location.href);
+      return;
+    }
+
+    if (resp.data2) {
+      sessionStorage.setItem("signinUrl", window.location.pathname + window.location.search);
+      Setting.goToLinkSoft(ths, `/forget/${application.name}`);
       return;
     }
 
@@ -315,14 +364,48 @@ class LoginPage extends React.Component {
       this.signInWithWebAuthn(username, values);
       return;
     }
-    if (this.state.loginMethod === "password") {
-      if (this.state.enableCaptchaModal === CaptchaRule.Always) {
+    if (this.state.loginMethod === "faceId") {
+      let username = this.state.username;
+      if (username === null || username === "") {
+        username = values["username"];
+      }
+      const application = this.getApplicationObj();
+      fetch(`${Setting.ServerUrl}/api/faceid-signin-begin?owner=${application.organization}&name=${username}`, {
+        method: "GET",
+        credentials: "include",
+        headers: {
+          "Accept-Language": Setting.getAcceptLanguage(),
+        },
+      }).then(res => res.json())
+        .then((res) => {
+          if (res.status === "error") {
+            Setting.showMessage("error", res.msg);
+            return;
+          }
+          this.setState({
+            openFaceRecognitionModal: true,
+            values: values,
+          });
+        });
+      return;
+    }
+    if (this.state.loginMethod === "password" || this.state.loginMethod === "ldap") {
+      const organization = this.getApplicationObj()?.organizationObj;
+      const [passwordCipher, errorMessage] = Obfuscator.encryptByPasswordObfuscator(organization?.passwordObfuscatorType, organization?.passwordObfuscatorKey, values["password"]);
+      if (errorMessage.length > 0) {
+        Setting.showMessage("error", errorMessage);
+        return;
+      } else {
+        values["password"] = passwordCipher;
+      }
+      const captchaRule = this.getCaptchaRule(this.getApplicationObj());
+      if (captchaRule === CaptchaRule.Always) {
         this.setState({
           openCaptchaModal: true,
           values: values,
         });
         return;
-      } else if (this.state.enableCaptchaModal === CaptchaRule.Dynamic) {
+      } else if (captchaRule === CaptchaRule.Dynamic) {
         this.checkCaptchaStatus(values);
         return;
       }
@@ -335,6 +418,7 @@ class LoginPage extends React.Component {
     if (this.state.type === "cas") {
       // CAS
       const casParams = Util.getCasParameters();
+      values["signinMethod"] = this.getCurrentLoginMethod();
       values["type"] = this.state.type;
       AuthBackend.loginCas(values, casParams).then((res) => {
         const loginHandler = (res) => {
@@ -354,25 +438,7 @@ class LoginPage extends React.Component {
         };
 
         if (res.status === "ok") {
-          if (res.data === NextMfa) {
-            this.setState({
-              getVerifyTotp: () => {
-                return (
-                  <MfaAuthVerifyForm
-                    mfaProps={res.data2}
-                    formValues={values}
-                    authParams={casParams}
-                    application={this.getApplicationObj()}
-                    onFail={() => {
-                      Setting.showMessage("error", i18next.t("mfa:Verification failed"));
-                    }}
-                    onSuccess={(res) => loginHandler(res)}
-                  />);
-              },
-            });
-          } else {
-            loginHandler(res);
-          }
+          Setting.checkLoginMfa(res, values, casParams, loginHandler, this);
         } else {
           Setting.showMessage("error", `${i18next.t("application:Failed to sign in")}: ${res.msg}`);
         }
@@ -387,15 +453,31 @@ class LoginPage extends React.Component {
             const responseType = values["type"];
 
             if (responseType === "login") {
+              if (res.data2) {
+                sessionStorage.setItem("signinUrl", window.location.pathname + window.location.search);
+                Setting.goToLink(this, `/forget/${this.state.applicationName}`);
+              }
               Setting.showMessage("success", i18next.t("application:Logged in successfully"));
               this.props.onLoginSuccess();
             } else if (responseType === "code") {
               this.postCodeLoginAction(res);
             } else if (responseType === "token" || responseType === "id_token") {
+              if (res.data2) {
+                sessionStorage.setItem("signinUrl", window.location.pathname + window.location.search);
+                Setting.goToLink(this, `/forget/${this.state.applicationName}`);
+              }
               const amendatoryResponseType = responseType === "token" ? "access_token" : responseType;
               const accessToken = res.data;
               Setting.goToLink(`${oAuthParams.redirectUri}#${amendatoryResponseType}=${accessToken}&state=${oAuthParams.state}&token_type=bearer`);
             } else if (responseType === "saml") {
+              if (res.data === RequiredMfa) {
+                this.props.onLoginSuccess(window.location.href);
+                return;
+              }
+              if (res.data2.needUpdatePassword) {
+                sessionStorage.setItem("signinUrl", window.location.pathname + window.location.search);
+                Setting.goToLink(this, `/forget/${this.state.applicationName}`);
+              }
               if (res.data2.method === "POST") {
                 this.setState({
                   samlResponse: res.data,
@@ -405,39 +487,13 @@ class LoginPage extends React.Component {
               } else {
                 const SAMLResponse = res.data;
                 const redirectUri = res.data2.redirectUrl;
-                Setting.goToLink(`${redirectUri}?SAMLResponse=${encodeURIComponent(SAMLResponse)}&RelayState=${oAuthParams.relayState}`);
+                Setting.goToLink(`${redirectUri}${redirectUri.includes("?") ? "&" : "?"}SAMLResponse=${encodeURIComponent(SAMLResponse)}&RelayState=${oAuthParams.relayState}`);
               }
             }
           };
 
           if (res.status === "ok") {
-            if (res.data === NextMfa) {
-              this.setState({
-                getVerifyTotp: () => {
-                  return (
-                    <MfaAuthVerifyForm
-                      mfaProps={res.data2}
-                      formValues={values}
-                      authParams={oAuthParams}
-                      application={this.getApplicationObj()}
-                      onFail={() => {
-                        Setting.showMessage("error", i18next.t("mfa:Verification failed"));
-                      }}
-                      onSuccess={(res) => loginHandler(res)}
-                    />);
-                },
-              });
-            } else if (res.data === "SelectPlan") {
-              // paid-user does not have active or pending subscription, go to application default pricing page to select-plan
-              const pricing = res.data2;
-              Setting.goToLink(`/select-plan/${pricing.owner}/${pricing.name}?user=${values.username}`);
-            } else if (res.data === "BuyPlanResult") {
-              // paid-user has pending subscription, go to buy-plan/result apge to notify payment result
-              const sub = res.data2;
-              Setting.goToLink(`/buy-plan/${sub.owner}/${sub.pricing}/result?subscription=${sub.name}`);
-            } else {
-              loginHandler(res);
-            }
+            Setting.checkLoginMfa(res, values, oAuthParams, loginHandler, this);
           } else {
             Setting.showMessage("error", `${i18next.t("application:Failed to sign in")}: ${res.msg}`);
           }
@@ -454,12 +510,259 @@ class LoginPage extends React.Component {
   }
 
   renderOtherFormProvider(application) {
+    if (Setting.inIframe()) {
+      return null;
+    }
+
     for (const providerConf of application.providers) {
       if (providerConf.provider?.type === "Google" && providerConf.rule === "OneTap" && this.props.preview !== "auto") {
         return (
           <GoogleOneTapLoginVirtualButton application={application} providerConf={providerConf} />
         );
       }
+    }
+
+    return null;
+  }
+
+  renderFormItem(application, signinItem) {
+    if (!signinItem.visible && signinItem.name !== "Forgot password?") {
+      return null;
+    }
+
+    const resultItemKey = `${application.organization}_${application.name}_${signinItem.name}`;
+
+    if (signinItem.name === "Logo") {
+      return (
+        <div key={resultItemKey} className="login-logo-box">
+          <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
+          {
+            Setting.renderHelmet(application)
+          }
+          {
+            Setting.renderLogo(application)
+          }
+        </div>
+      );
+    } else if (signinItem.name === "Back button") {
+      return (
+        <div key={resultItemKey} className="back-button">
+          <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
+          {
+            this.renderBackButton()
+          }
+        </div>
+      );
+    } else if (signinItem.name === "Languages") {
+      const languages = application.organizationObj.languages;
+      if (languages.length <= 1) {
+        const language = (languages.length === 1) ? languages[0] : "en";
+        if (Setting.getLanguage() !== language) {
+          Setting.setLanguage(language);
+        }
+        return null;
+      }
+
+      return (
+        <div key={resultItemKey} className="login-languages">
+          <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
+          <LanguageSelect languages={application.organizationObj.languages} />
+        </div>
+      );
+    } else if (signinItem.name === "Signin methods") {
+      return (
+        <div key={resultItemKey}>
+          <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
+          {this.renderMethodChoiceBox()}
+        </div>
+      )
+      ;
+    } else if (signinItem.name === "Username") {
+      return (
+        <div key={resultItemKey}>
+          <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
+          <Form.Item
+            name="username"
+            className="login-username"
+            label={signinItem.label ? signinItem.label : null}
+            rules={[
+              {
+                required: true,
+                message: () => {
+                  switch (this.state.loginMethod) {
+                  case "verificationCodeEmail":
+                    return i18next.t("login:Please input your Email!");
+                  case "verificationCodePhone":
+                    return i18next.t("login:Please input your Phone!");
+                  case "ldap":
+                    return i18next.t("login:Please input your LDAP username!");
+                  default:
+                    return i18next.t("login:Please input your Email or Phone!");
+                  }
+                },
+              },
+              {
+                validator: (_, value) => {
+                  if (value === "") {
+                    return Promise.resolve();
+                  }
+
+                  if (this.state.loginMethod === "verificationCode") {
+                    if (!Setting.isValidEmail(value) && !Setting.isValidPhone(value)) {
+                      this.setState({validEmailOrPhone: false});
+                      return Promise.reject(i18next.t("login:The input is not valid Email or phone number!"));
+                    }
+
+                    if (Setting.isValidEmail(value)) {
+                      this.setState({validEmail: true});
+                    } else {
+                      this.setState({validEmail: false});
+                    }
+                  } else if (this.state.loginMethod === "verificationCodeEmail") {
+                    if (!Setting.isValidEmail(value)) {
+                      this.setState({validEmail: false});
+                      this.setState({validEmailOrPhone: false});
+                      return Promise.reject(i18next.t("login:The input is not valid Email!"));
+                    } else {
+                      this.setState({validEmail: true});
+                    }
+                  } else if (this.state.loginMethod === "verificationCodePhone") {
+                    if (!Setting.isValidPhone(value)) {
+                      this.setState({validEmailOrPhone: false});
+                      return Promise.reject(i18next.t("login:The input is not valid phone number!"));
+                    }
+                  }
+
+                  this.setState({validEmailOrPhone: true});
+                  return Promise.resolve();
+                },
+              },
+            ]}
+          >
+
+            <Input
+              id="input"
+              className="login-username-input"
+              prefix={<UserOutlined className="site-form-item-icon" />}
+              placeholder={this.getPlaceholder(signinItem.placeholder)}
+              onChange={e => {
+                this.setState({
+                  username: e.target.value,
+                });
+              }}
+            />
+          </Form.Item>
+        </div>
+      );
+    } else if (signinItem.name === "Password") {
+      return (
+        <div key={resultItemKey}>
+          <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
+          {this.renderPasswordOrCodeInput(signinItem)}
+        </div>
+      );
+    } else if (signinItem.name === "Forgot password?") {
+      return (
+        <div key={resultItemKey}>
+          <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
+          <div className="login-forget-password">
+            <Form.Item name="autoSignin" valuePropName="checked" noStyle>
+              <Checkbox style={{float: "left"}}>
+                {i18next.t("login:Auto sign in")}
+              </Checkbox>
+            </Form.Item>
+            {
+              signinItem.visible ? Setting.renderForgetLink(application, signinItem.label ? signinItem.label : i18next.t("login:Forgot password?")) : null
+            }
+          </div>
+        </div>
+      );
+    } else if (signinItem.name === "Agreement") {
+      return AgreementModal.isAgreementRequired(application) ? AgreementModal.renderAgreementFormItem(application, true, {}, this) : null;
+    } else if (signinItem.name === "Login button") {
+      return (
+        <Form.Item key={resultItemKey} className="login-button-box">
+          <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
+          <Button
+            type="primary"
+            htmlType="submit"
+            className="login-button"
+          >
+            {
+              this.state.loginMethod === "webAuthn" ? i18next.t("login:Sign in with WebAuthn") :
+                this.state.loginMethod === "faceId" ? i18next.t("login:Sign in with Face ID") :
+                  signinItem.label ? signinItem.label : i18next.t("login:Sign In")
+            }
+          </Button>
+          {
+            this.state.loginMethod === "faceId" ?
+              <Suspense fallback={null}>
+                <FaceRecognitionModal
+                  visible={this.state.openFaceRecognitionModal}
+                  onOk={(faceId) => {
+                    const values = this.state.values;
+                    values["faceId"] = faceId;
+
+                    this.login(values);
+                    this.setState({openFaceRecognitionModal: false});
+                  }}
+                  onCancel={() => this.setState({openFaceRecognitionModal: false})}
+                />
+              </Suspense>
+              :
+              <>
+              </>
+          }
+          {
+            this.renderCaptchaModal(application)
+          }
+        </Form.Item>
+      );
+    } else if (signinItem.name === "Providers") {
+      const showForm = Setting.isPasswordEnabled(application) || Setting.isCodeSigninEnabled(application) || Setting.isWebAuthnEnabled(application) || Setting.isLdapEnabled(application);
+      if (signinItem.rule === "None" || signinItem.rule === "") {
+        signinItem.rule = showForm ? "small" : "big";
+      }
+
+      return (
+        <div key={resultItemKey}>
+          <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
+          <Form.Item>
+            {
+              application.providers.filter(providerItem => this.isProviderVisible(providerItem)).map((providerItem, id) => {
+                return (
+                  <span key={id} onClick={(e) => {
+                    const agreementChecked = this.form.current.getFieldValue("agreement");
+
+                    if (agreementChecked !== undefined && typeof agreementChecked === "boolean" && !agreementChecked) {
+                      e.preventDefault();
+                      message.error(i18next.t("signup:Please accept the agreement!"));
+                    }
+                  }}>
+                    {
+                      ProviderButton.renderProviderLogo(providerItem.provider, application, null, null, signinItem.rule, this.props.location)
+                    }
+                  </span>
+                );
+              })
+            }
+            {
+              this.renderOtherFormProvider(application)
+            }
+          </Form.Item>
+        </div>
+      );
+    } else if (signinItem.name.startsWith("Text ") || signinItem?.isCustom) {
+      return (
+        <div key={resultItemKey} dangerouslySetInnerHTML={{__html: signinItem.customCss}} />
+      );
+    } else if (signinItem.name === "Signup link") {
+      return (
+        <div key={resultItemKey} style={{width: "100%"}} className="login-signup-link">
+          <div dangerouslySetInnerHTML={{__html: ("<style>" + signinItem.customCss?.replaceAll("<style>", "").replaceAll("</style>", "") + "</style>")}} />
+          {this.renderFooter(application, signinItem)}
+        </div>
+      );
     }
   }
 
@@ -487,7 +790,7 @@ class LoginPage extends React.Component {
       );
     }
 
-    const showForm = application.enablePassword || application.enableCodeSignin || application.enableWebAuthn;
+    const showForm = Setting.isPasswordEnabled(application) || Setting.isCodeSigninEnabled(application) || Setting.isWebAuthnEnabled(application) || Setting.isLdapEnabled(application) || Setting.isFaceIdEnabled(application);
     if (showForm) {
       let loginWidth = 320;
       if (Setting.getLanguage() === "fr") {
@@ -538,92 +841,10 @@ class LoginPage extends React.Component {
             ]}
           >
           </Form.Item>
-          {this.renderMethodChoiceBox()}
-          <Row style={{minHeight: 130, alignItems: "center"}}>
-            <Col span={24}>
-              <Form.Item
-                name="username"
-                rules={[
-                  {
-                    required: true,
-                    message: i18next.t("login:Please input your Email or Phone!"),
-                  },
-                  {
-                    validator: (_, value) => {
-                      if (this.state.loginMethod === "verificationCode") {
-                        if (!Setting.isValidEmail(value) && !Setting.isValidPhone(value)) {
-                          this.setState({validEmailOrPhone: false});
-                          return Promise.reject(i18next.t("login:The input is not valid Email or phone number!"));
-                        }
 
-                        if (Setting.isValidEmail(value)) {
-                          this.setState({validEmail: true});
-                        } else {
-                          this.setState({validEmail: false});
-                        }
-                      }
-
-                      this.setState({validEmailOrPhone: true});
-                      return Promise.resolve();
-                    },
-                  },
-                ]}
-              >
-                <Input
-                  id="input"
-                  prefix={<UserOutlined className="site-form-item-icon" />}
-                  placeholder={(this.state.loginMethod === "verificationCode") ? i18next.t("login:Email or phone") : i18next.t("login:username, Email or phone")}
-                  onChange={e => {
-                    this.setState({
-                      username: e.target.value,
-                    });
-                  }}
-                />
-              </Form.Item>
-            </Col>
-            {
-              this.renderPasswordOrCodeInput()
-            }
-          </Row>
-          <div style={{display: "inline-flex", justifyContent: "space-between", width: "320px", marginBottom: AgreementModal.isAgreementRequired(application) ? "5px" : "25px"}}>
-            <Form.Item name="autoSignin" valuePropName="checked" noStyle>
-              <Checkbox style={{float: "left"}}>
-                {i18next.t("login:Auto sign in")}
-              </Checkbox>
-            </Form.Item>
-            {
-              Setting.renderForgetLink(application, i18next.t("login:Forgot password?"))
-            }
-          </div>
-          {AgreementModal.isAgreementRequired(application) ? AgreementModal.renderAgreementFormItem(application, true, {}, this) : null}
-          <Form.Item>
-            <Button
-              type="primary"
-              htmlType="submit"
-              style={{width: "100%", marginBottom: "5px"}}
-            >
-              {
-                this.state.loginMethod === "webAuthn" ? i18next.t("login:Sign in with WebAuthn") :
-                  i18next.t("login:Sign In")
-              }
-            </Button>
-            {
-              this.renderCaptchaModal(application)
-            }
-            {
-              this.renderFooter(application)
-            }
-          </Form.Item>
-          <Form.Item>
-            {
-              application.providers.filter(providerItem => this.isProviderVisible(providerItem)).map(providerItem => {
-                return ProviderButton.renderProviderLogo(providerItem.provider, application, 30, 5, "small", this.props.location);
-              })
-            }
-            {
-              this.renderOtherFormProvider(application)
-            }
-          </Form.Item>
+          {
+            application.signinItems?.map(signinItem => this.renderFormItem(application, signinItem))
+          }
         </Form>
       );
     } else {
@@ -636,23 +857,12 @@ class LoginPage extends React.Component {
                 {application.displayName}
               </span>
             </a>
-              :
+            :
           </div>
           <br />
           {
-            application.providers?.filter(providerItem => this.isProviderVisible(providerItem)).map(providerItem => {
-              return ProviderButton.renderProviderLogo(providerItem.provider, application, 40, 10, "big", this.props.location);
-            })
+            application?.signinItems.map(signinItem => signinItem.name === "Providers" || signinItem.name === "Signup link" ? this.renderFormItem(application, signinItem) : null)
           }
-          {
-            this.renderOtherFormProvider(application)
-          }
-          <div>
-            <br />
-            {
-              this.renderFooter(application)
-            }
-          </div>
         </div>
       );
     }
@@ -675,7 +885,7 @@ class LoginPage extends React.Component {
   }
 
   renderCaptchaModal(application) {
-    if (this.state.enableCaptchaModal === CaptchaRule.Never) {
+    if (this.getCaptchaRule(this.getApplicationObj()) === CaptchaRule.Never) {
       return null;
     }
     const captchaProviderItems = this.getCaptchaProviderItems(application);
@@ -703,20 +913,23 @@ class LoginPage extends React.Component {
     />;
   }
 
-  renderFooter(application) {
+  renderFooter(application, signinItem) {
     return (
-      <span style={{float: "right"}}>
+      <div>
         {
           !application.enableSignUp ? null : (
-            <React.Fragment>
-              {i18next.t("login:No account?")}&nbsp;
-              {
-                Setting.renderSignupLink(application, i18next.t("login:sign up now"))
-              }
-            </React.Fragment>
+            signinItem.label ? Setting.renderSignupLink(application, signinItem.label) :
+              (
+                <React.Fragment>
+                  {i18next.t("login:No account?")}&nbsp;
+                  {
+                    Setting.renderSignupLink(application, i18next.t("login:sign up now"))
+                  }
+                </React.Fragment>
+              )
           )
         }
-      </span>
+      </div>
     );
   }
 
@@ -829,38 +1042,45 @@ class LoginPage extends React.Component {
       });
   }
 
-  renderPasswordOrCodeInput() {
+  renderPasswordOrCodeInput(signinItem) {
     const application = this.getApplicationObj();
-    if (this.state.loginMethod === "password") {
+    if (this.state.loginMethod === "password" || this.state.loginMethod === "ldap") {
       return (
         <Col span={24}>
-          <Form.Item
-            name="password"
-            rules={[{required: true, message: i18next.t("login:Please input your password!")}]}
-          >
-            <Input.Password
-              prefix={<LockOutlined className="site-form-item-icon" />}
-              type="password"
-              placeholder={i18next.t("general:Password")}
-              disabled={!application.enablePassword}
-            />
-          </Form.Item>
+          <div>
+            <Form.Item
+              name="password"
+              className="login-password"
+              label={signinItem.label ? signinItem.label : null}
+              rules={[{required: true, message: i18next.t("login:Please input your password!")}]}
+            >
+              <Input.Password
+                className="login-password-input"
+                prefix={<LockOutlined className="site-form-item-icon" />}
+                type="password"
+                placeholder={signinItem.placeholder ? signinItem.placeholder : i18next.t("general:Password")}
+                disabled={this.state.loginMethod === "password" ? !Setting.isPasswordEnabled(application) : !Setting.isLdapEnabled(application)}
+              />
+            </Form.Item>
+          </div>
         </Col>
       );
-    } else if (this.state.loginMethod === "verificationCode") {
+    } else if (this.state.loginMethod?.includes("verificationCode")) {
       return (
         <Col span={24}>
-          <Form.Item
-            name="code"
-            rules={[{required: true, message: i18next.t("login:Please input your code!")}]}
-          >
-            <SendCodeInput
-              disabled={this.state.username?.length === 0 || !this.state.validEmailOrPhone}
-              method={"login"}
-              onButtonClickArgs={[this.state.username, this.state.validEmail ? "email" : "phone", Setting.getApplicationName(application)]}
-              application={application}
-            />
-          </Form.Item>
+          <div className="login-password">
+            <Form.Item
+              name="code"
+              rules={[{required: true, message: i18next.t("login:Please input your code!")}]}
+            >
+              <SendCodeInput
+                disabled={this.state.username?.length === 0 || !this.state.validEmailOrPhone}
+                method={"login"}
+                onButtonClickArgs={[this.state.username, this.state.validEmail ? "email" : "phone", Setting.getApplicationName(application)]}
+                application={application}
+              />
+            </Form.Item>
+          </div>
         </Col>
       );
     } else {
@@ -871,14 +1091,42 @@ class LoginPage extends React.Component {
   renderMethodChoiceBox() {
     const application = this.getApplicationObj();
     const items = [];
-    application.enablePassword ? items.push({label: i18next.t("general:Password"), key: "password"}) : null;
-    application.enableCodeSignin ? items.push({label: i18next.t("login:Verification code"), key: "verificationCode"}) : null;
-    application.enableWebAuthn ? items.push({label: i18next.t("login:WebAuthn"), key: "webAuthn"}) : null;
+
+    const generateItemKey = (name, rule) => {
+      return `${name}-${rule}`;
+    };
+
+    const itemsMap = new Map([
+      [generateItemKey("Password", "All"), {label: i18next.t("general:Password"), key: "password"}],
+      [generateItemKey("Password", "Non-LDAP"), {label: i18next.t("general:Password"), key: "password"}],
+      [generateItemKey("Verification code", "All"), {label: i18next.t("login:Verification code"), key: "verificationCode"}],
+      [generateItemKey("Verification code", "Email only"), {label: i18next.t("login:Verification code"), key: "verificationCodeEmail"}],
+      [generateItemKey("Verification code", "Phone only"), {label: i18next.t("login:Verification code"), key: "verificationCodePhone"}],
+      [generateItemKey("WebAuthn", "None"), {label: i18next.t("login:WebAuthn"), key: "webAuthn"}],
+      [generateItemKey("LDAP", "None"), {label: i18next.t("login:LDAP"), key: "ldap"}],
+      [generateItemKey("Face ID", "None"), {label: i18next.t("login:Face ID"), key: "faceId"}],
+    ]);
+
+    application?.signinMethods?.forEach((signinMethod) => {
+      if (signinMethod.rule === "Hide password") {
+        return;
+      }
+      const item = itemsMap.get(generateItemKey(signinMethod.name, signinMethod.rule));
+      if (item) {
+        let label = signinMethod.name === signinMethod.displayName ? item.label : signinMethod.displayName;
+
+        if (application?.signinMethods?.length >= 4 && label === "Verification code") {
+          label = "Code";
+        }
+
+        items.push({label: label, key: item.key});
+      }
+    });
 
     if (items.length > 1) {
       return (
         <div>
-          <Tabs items={items} size={"small"} defaultActiveKey={this.getDefaultLoginMethod(application)} onChange={(key) => {
+          <Tabs className="signin-methods" items={items} size={"small"} defaultActiveKey={this.getDefaultLoginMethod(application)} onChange={(key) => {
             this.setState({loginMethod: key});
           }} centered>
           </Tabs>
@@ -953,7 +1201,7 @@ class LoginPage extends React.Component {
     };
 
     return (
-      <div style={{height: 300, width: 300}}>
+      <div style={{height: 300, minWidth: 320}}>
         {renderChoiceBox()}
       </div>
     );
@@ -973,10 +1221,9 @@ class LoginPage extends React.Component {
   }
 
   renderBackButton() {
-    if (this.state.orgChoiceMode === "None") {
+    if (this.state.orgChoiceMode === "None" || this.props.preview === "auto") {
       return (
-        <Button type="text" size="large" icon={<ArrowLeftOutlined />}
-          style={{top: "65px", left: "15px", position: "absolute"}}
+        <Button className="back-inner-button" type="text" size="large" icon={<ArrowLeftOutlined />}
           onClick={() => history.back()}>
         </Button>
       );
@@ -1003,7 +1250,7 @@ class LoginPage extends React.Component {
     }
 
     const visibleOAuthProviderItems = (application.providers === null) ? [] : application.providers.filter(providerItem => this.isProviderVisible(providerItem));
-    if (this.props.preview !== "auto" && !application.enablePassword && !application.enableCodeSignin && !application.enableWebAuthn && visibleOAuthProviderItems.length === 1) {
+    if (this.props.preview !== "auto" && !Setting.isPasswordEnabled(application) && !Setting.isCodeSigninEnabled(application) && !Setting.isWebAuthnEnabled(application) && !Setting.isLdapEnabled(application) && visibleOAuthProviderItems.length === 1) {
       Setting.goToLink(Provider.getAuthUrl(application, visibleOAuthProviderItems[0].provider, "signup"));
       return (
         <div style={{display: "flex", justifyContent: "center", alignItems: "center", width: "100%"}}>
@@ -1018,27 +1265,15 @@ class LoginPage extends React.Component {
         <div className="login-content" style={{margin: this.props.preview ?? this.parseOffset(application.formOffset)}}>
           {Setting.inIframe() || Setting.isMobile() ? null : <div dangerouslySetInnerHTML={{__html: application.formCss}} />}
           {Setting.inIframe() || !Setting.isMobile() ? null : <div dangerouslySetInnerHTML={{__html: application.formCssMobile}} />}
-          <div className="login-panel">
+          <div className={Setting.isDarkTheme(this.props.themeAlgorithm) ? "login-panel-dark" : "login-panel"}>
             <div className="side-image" style={{display: application.formOffset !== 4 ? "none" : null}}>
               <div dangerouslySetInnerHTML={{__html: application.formSideHtml}} />
             </div>
             <div className="login-form">
               <div>
-                <div>
-                  {
-                    Setting.renderHelmet(application)
-                  }
-                  {
-                    Setting.renderLogo(application)
-                  }
-                  {
-                    this.renderBackButton()
-                  }
-                  <LanguageSelect languages={application.organizationObj.languages} style={{top: "55px", right: "5px", position: "absolute"}} />
-                  {
-                    this.renderLoginPanel(application)
-                  }
-                </div>
+                {
+                  this.renderLoginPanel(application)
+                }
               </div>
             </div>
           </div>

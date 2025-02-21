@@ -69,9 +69,11 @@ class PermissionListPage extends BaseListPage {
       .then((res) => {
         if (res.status === "ok") {
           Setting.showMessage("success", i18next.t("general:Successfully deleted"));
-          this.setState({
-            data: Setting.deleteRow(this.state.data, i),
-            pagination: {total: this.state.pagination.total - 1},
+          this.fetch({
+            pagination: {
+              ...this.state.pagination,
+              current: this.state.pagination.current > 1 && this.state.data.length === 1 ? this.state.pagination.current - 1 : this.state.pagination.current,
+            },
           });
         } else {
           Setting.showMessage("error", `${i18next.t("general:Failed to delete")}: ${res.msg}`);
@@ -91,7 +93,7 @@ class PermissionListPage extends BaseListPage {
         const {pagination} = this.state;
         this.fetch({pagination});
       } else {
-        Setting.showMessage("error", `Users failed to upload: ${res.msg}`);
+        Setting.showMessage("error", `${i18next.t("general:Failed to sync")}: ${res.msg}`);
       }
     } else if (status === "error") {
       Setting.showMessage("error", "File failed to upload");
@@ -111,8 +113,8 @@ class PermissionListPage extends BaseListPage {
 
     return (
       <Upload {...props}>
-        <Button id="upload-button" type="primary" size="small">
-          <UploadOutlined /> {i18next.t("user:Upload (.xlsx)")}
+        <Button icon={<UploadOutlined />} id="upload-button" type="primary" size="small">
+          {i18next.t("user:Upload (.xlsx)")}
         </Button></Upload>
     );
   }

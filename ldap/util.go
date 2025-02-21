@@ -23,7 +23,7 @@ import (
 	"github.com/casdoor/casdoor/util"
 	"github.com/lor00x/goldap/message"
 
-	ldap "github.com/forestmgy/ldapserver"
+	ldap "github.com/casdoor/ldapserver"
 
 	"github.com/xorm-io/builder"
 )
@@ -78,6 +78,8 @@ var ldapAttributesMapping = map[string]FieldRelation{
 		},
 	},
 }
+
+const ldapMemberOfAttr = "memberOf"
 
 var AdditionalLdapAttributes []message.LDAPString
 
@@ -180,7 +182,19 @@ func buildUserFilterCondition(filter interface{}) (builder.Cond, error) {
 		}
 		return builder.Not{cond}, nil
 	case message.FilterEqualityMatch:
-		field, err := getUserFieldFromAttribute(string(f.AttributeDesc()))
+		attr := string(f.AttributeDesc())
+
+		if attr == ldapMemberOfAttr {
+			var names []string
+			groupId := string(f.AssertionValue())
+			users := object.GetGroupUsersWithoutError(groupId)
+			for _, user := range users {
+				names = append(names, user.Name)
+			}
+			return builder.In("name", names), nil
+		}
+
+		field, err := getUserFieldFromAttribute(attr)
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +246,7 @@ func buildSafeCondition(filter interface{}) builder.Cond {
 	condition, err := buildUserFilterCondition(filter)
 	if err != nil {
 		log.Printf("err = %v", err.Error())
-		return nil
+		return builder.And(builder.Expr("1 != 1"))
 	}
 	return condition
 }
@@ -246,7 +260,7 @@ func GetFilteredUsers(m *ldap.Message) (filteredUsers []*object.User, code int) 
 		return nil, code
 	}
 
-	if name == "*" && m.Client.IsOrgAdmin { // get all users from organization 'org'
+	if name == "*" { // get all users from organization 'org'
 		if m.Client.IsGlobalAdmin && org == "*" {
 			filteredUsers, err = object.GetGlobalUsersWithFilter(buildSafeCondition(r.Filter()))
 			if err != nil {

@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/casdoor/casdoor/conf"
 	"github.com/casdoor/casdoor/util"
 	"github.com/xorm-io/builder"
 	"github.com/xorm-io/core"
@@ -29,17 +30,19 @@ type Group struct {
 	CreatedTime string `xorm:"varchar(100)" json:"createdTime"`
 	UpdatedTime string `xorm:"varchar(100)" json:"updatedTime"`
 
-	DisplayName  string  `xorm:"varchar(100)" json:"displayName"`
-	Manager      string  `xorm:"varchar(100)" json:"manager"`
-	ContactEmail string  `xorm:"varchar(100)" json:"contactEmail"`
-	Type         string  `xorm:"varchar(100)" json:"type"`
-	ParentId     string  `xorm:"varchar(100)" json:"parentId"`
-	IsTopGroup   bool    `xorm:"bool" json:"isTopGroup"`
-	Users        []*User `xorm:"-" json:"users"`
+	DisplayName  string   `xorm:"varchar(100)" json:"displayName"`
+	Manager      string   `xorm:"varchar(100)" json:"manager"`
+	ContactEmail string   `xorm:"varchar(100)" json:"contactEmail"`
+	Type         string   `xorm:"varchar(100)" json:"type"`
+	ParentId     string   `xorm:"varchar(100)" json:"parentId"`
+	ParentName   string   `xorm:"-" json:"parentName"`
+	IsTopGroup   bool     `xorm:"bool" json:"isTopGroup"`
+	Users        []string `xorm:"-" json:"users"`
 
-	Title    string   `json:"title,omitempty"`
-	Key      string   `json:"key,omitempty"`
-	Children []*Group `json:"children,omitempty"`
+	Title        string   `json:"title,omitempty"`
+	Key          string   `json:"key,omitempty"`
+	HaveChildren bool     `xorm:"-" json:"haveChildren"`
+	Children     []*Group `json:"children,omitempty"`
 
 	IsEnabled bool `json:"isEnabled"`
 }
@@ -75,6 +78,30 @@ func GetPaginationGroups(owner string, offset, limit int, field, value, sortFiel
 	}
 
 	return groups, nil
+}
+
+func GetGroupsHaveChildrenMap(groups []*Group) (map[string]*Group, error) {
+	groupsHaveChildren := []*Group{}
+	resultMap := make(map[string]*Group)
+	groupMap := map[string]*Group{}
+
+	groupIds := []string{}
+	for _, group := range groups {
+		groupMap[group.Name] = group
+		groupIds = append(groupIds, group.Name)
+		if !group.IsTopGroup {
+			groupIds = append(groupIds, group.ParentId)
+		}
+	}
+
+	err := ormer.Engine.Cols("owner", "name", "parent_id", "display_name").Distinct("parent_id").In("parent_id", groupIds).Find(&groupsHaveChildren)
+	if err != nil {
+		return nil, err
+	}
+	for _, group := range groupsHaveChildren {
+		resultMap[group.ParentId] = groupMap[group.ParentId]
+	}
+	return resultMap, nil
 }
 
 func getGroup(owner string, name string) (*Group, error) {
@@ -152,6 +179,15 @@ func AddGroups(groups []*Group) (bool, error) {
 	return affected != 0, nil
 }
 
+func deleteGroup(group *Group) (bool, error) {
+	affected, err := ormer.Engine.ID(core.PK{group.Owner, group.Name}).Delete(&Group{})
+	if err != nil {
+		return false, err
+	}
+
+	return affected != 0, nil
+}
+
 func DeleteGroup(group *Group) (bool, error) {
 	_, err := ormer.Engine.Get(group)
 	if err != nil {
@@ -170,12 +206,7 @@ func DeleteGroup(group *Group) (bool, error) {
 		return false, errors.New("group has users")
 	}
 
-	affected, err := ormer.Engine.ID(core.PK{group.Owner, group.Name}).Delete(&Group{})
-	if err != nil {
-		return false, err
-	}
-
-	return affected != 0, nil
+	return deleteGroup(group)
 }
 
 func checkGroupName(name string) error {
@@ -224,7 +255,8 @@ func GetGroupUserCount(groupId string, field, value string) (int64, error) {
 	if field == "" && value == "" {
 		return int64(len(names)), nil
 	} else {
-		return ormer.Engine.Table("user").
+		tableNamePrefix := conf.GetConfigString("tableNamePrefix")
+		return ormer.Engine.Table(tableNamePrefix+"user").
 			Where("owner = ?", owner).In("name", names).
 			And(fmt.Sprintf("user.%s like ?", util.CamelToSnakeCase(field)), "%"+value+"%").
 			Count()
@@ -239,7 +271,9 @@ func GetPaginationGroupUsers(groupId string, offset, limit int, field, value, so
 		return nil, err
 	}
 
-	session := ormer.Engine.Table("user").
+	tableNamePrefix := conf.GetConfigString("tableNamePrefix")
+	prefixedUserTable := tableNamePrefix + "user"
+	session := ormer.Engine.Table(prefixedUserTable).
 		Where("owner = ?", owner).In("name", names)
 
 	if offset != -1 && limit != -1 {
@@ -247,16 +281,19 @@ func GetPaginationGroupUsers(groupId string, offset, limit int, field, value, so
 	}
 
 	if field != "" && value != "" {
-		session = session.And(fmt.Sprintf("user.%s like ?", util.CamelToSnakeCase(field)), "%"+value+"%")
+		session = session.And(fmt.Sprintf("%s.%s like ?", prefixedUserTable, util.CamelToSnakeCase(field)), "%"+value+"%")
 	}
 
 	if sortField == "" || sortOrder == "" {
 		sortField = "created_time"
 	}
+
+	orderQuery := fmt.Sprintf("%s.%s", prefixedUserTable, util.SnakeString(sortField))
+
 	if sortOrder == "ascend" {
-		session = session.Asc(fmt.Sprintf("user.%s", util.SnakeString(sortField)))
+		session = session.Asc(orderQuery)
 	} else {
-		session = session.Desc(fmt.Sprintf("user.%s", util.SnakeString(sortField)))
+		session = session.Desc(orderQuery)
 	}
 
 	err = session.Find(&users)
@@ -269,7 +306,10 @@ func GetPaginationGroupUsers(groupId string, offset, limit int, field, value, so
 
 func GetGroupUsers(groupId string) ([]*User, error) {
 	users := []*User{}
-	owner, _ := util.GetOwnerAndNameFromId(groupId)
+	owner, _, err := util.GetOwnerAndNameFromIdWithError(groupId)
+	if err != nil {
+		return nil, err
+	}
 	names, err := userEnforcer.GetUserNamesByGroupName(groupId)
 	if err != nil {
 		return nil, err
@@ -279,6 +319,39 @@ func GetGroupUsers(groupId string) ([]*User, error) {
 		return nil, err
 	}
 	return users, nil
+}
+
+func GetGroupUsersWithoutError(groupId string) []*User {
+	users, _ := GetGroupUsers(groupId)
+	return users
+}
+
+func ExtendGroupWithUsers(group *Group) error {
+	if group == nil {
+		return nil
+	}
+
+	groupId := group.GetId()
+	userIds := []string{}
+	userIds, err := userEnforcer.GetAllUsersByGroup(groupId)
+	if err != nil {
+		return err
+	}
+
+	group.Users = userIds
+	return nil
+}
+
+func ExtendGroupsWithUsers(groups []*Group) error {
+	for _, group := range groups {
+		users, err := userEnforcer.GetAllUsersByGroup(group.GetId())
+		if err != nil {
+			return err
+		}
+
+		group.Users = users
+	}
+	return nil
 }
 
 func GroupChangeTrigger(oldName, newName string) error {

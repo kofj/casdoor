@@ -61,9 +61,9 @@ const authInfo = {
   },
   WeCom: {
     scope: "snsapi_userinfo",
-    endpoint: "https://open.work.weixin.qq.com/wwopen/sso/3rd_qrConnect",
+    endpoint: "https://login.work.weixin.qq.com/wwlogin/sso/login",
     silentEndpoint: "https://open.weixin.qq.com/connect/oauth2/authorize",
-    internalEndpoint: "https://open.work.weixin.qq.com/wwopen/sso/qrConnect",
+    internalEndpoint: "https://login.work.weixin.qq.com/wwlogin/sso/login",
   },
   Lark: {
     // scope: "email",
@@ -100,6 +100,10 @@ const authInfo = {
     scope: "user.read",
     endpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
   },
+  AzureADB2C: {
+    scope: "openid",
+    endpoint: "https://tenant.b2clogin.com/tenant.onmicrosoft.com/userflow/oauth2/v2.0/authorize",
+  },
   Slack: {
     scope: "users:read",
     endpoint: "https://slack.com/oauth/authorize",
@@ -114,6 +118,10 @@ const authInfo = {
   Douyin: {
     scope: "user_info",
     endpoint: "https://open.douyin.com/platform/oauth/connect",
+  },
+  Kwai: {
+    scope: "user_info",
+    endpoint: "https://open.kuaishou.com/oauth2/connect",
   },
   Custom: {
     endpoint: "https://example.com/",
@@ -278,7 +286,7 @@ const authInfo = {
     endpoint: "https://id.twitch.tv/oauth2/authorize",
   },
   Twitter: {
-    scope: "users.read",
+    scope: "users.read%20tweet.read",
     endpoint: "https://twitter.com/i/oauth2/authorize",
   },
   Typetalk: {
@@ -373,15 +381,14 @@ export function getProviderLogoWidget(provider) {
   }
 }
 
-export function getAuthUrl(application, provider, method) {
+export function getAuthUrl(application, provider, method, code) {
   if (application === null || provider === null) {
     return "";
   }
 
   let endpoint = authInfo[provider.type].endpoint;
   let redirectUri = `${window.location.origin}/callback`;
-  const scope = authInfo[provider.type].scope;
-
+  let scope = authInfo[provider.type].scope;
   const isShortState = (provider.type === "WeChat" && navigator.userAgent.includes("MicroMessenger")) || (provider.type === "Twitter");
   const state = Util.getStateFromQueryParams(application.name, provider.name, method, isShortState);
   const codeChallenge = "P3S-a7dr8bgM4bF6vOyiKkKETDl16rcAzao9F8UIL1Y"; // SHA256(Base64-URL-encode("casdoor-verifier"))
@@ -392,9 +399,11 @@ export function getAuthUrl(application, provider, method) {
     }
   } else if (provider.type === "Apple") {
     redirectUri = `${window.location.origin}/api/callback`;
+  } else if (provider.type === "Google" && provider.disableSsl) {
+    scope += "+https://www.googleapis.com/auth/user.phonenumbers.read";
   }
 
-  if (provider.type === "Google" || provider.type === "GitHub" || provider.type === "QQ" || provider.type === "Facebook"
+  if (provider.type === "Google" || provider.type === "GitHub" || provider.type === "Facebook"
     || provider.type === "Weibo" || provider.type === "Gitee" || provider.type === "LinkedIn" || provider.type === "GitLab" || provider.type === "AzureAD"
     || provider.type === "Slack" || provider.type === "Line" || provider.type === "Amazon" || provider.type === "Auth0" || provider.type === "BattleNet"
     || provider.type === "Bitbucket" || provider.type === "Box" || provider.type === "CloudFoundry" || provider.type === "Dailymotion"
@@ -406,12 +415,19 @@ export function getAuthUrl(application, provider, method) {
     || provider.type === "Twitch" || provider.type === "Typetalk" || provider.type === "Uber" || provider.type === "VK" || provider.type === "Wepay"
     || provider.type === "Xero" || provider.type === "Yahoo" || provider.type === "Yammer" || provider.type === "Yandex" || provider.type === "Zoom") {
     return `${endpoint}?client_id=${provider.clientId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&state=${state}`;
+  } else if (provider.type === "QQ") {
+    return `${endpoint}?response_type=code&client_id=${provider.clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&scope=${encodeURIComponent(scope)}`;
+  } else if (provider.type === "AzureADB2C") {
+    return `https://${provider.domain}.b2clogin.com/${provider.domain}.onmicrosoft.com/${provider.appId}/oauth2/v2.0/authorize?client_id=${provider.clientId}&nonce=defaultNonce&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_type=code&state=${state}&prompt=login`;
   } else if (provider.type === "DingTalk") {
     return `${endpoint}?client_id=${provider.clientId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&prompt=consent&state=${state}`;
   } else if (provider.type === "WeChat") {
     if (navigator.userAgent.includes("MicroMessenger")) {
       return `${authInfo[provider.type].mpEndpoint}?appid=${provider.clientId2}&redirect_uri=${redirectUri}&state=${state}&scope=${authInfo[provider.type].mpScope}&response_type=code#wechat_redirect`;
     } else {
+      if (provider.clientId2 && provider?.disableSsl && provider?.signName === "media") {
+        return `${window.location.origin}/callback?state=${state}&code=${"wechat_oa:" + code}`;
+      }
       return `${endpoint}?appid=${provider.clientId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&state=${state}#wechat_redirect`;
     }
   } else if (provider.type === "WeCom") {
@@ -421,7 +437,7 @@ export function getAuthUrl(application, provider, method) {
         return `${endpoint}?appid=${provider.clientId}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}&response_type=code#wechat_redirect`;
       } else if (provider.method === "Normal") {
         endpoint = authInfo[provider.type].internalEndpoint;
-        return `${endpoint}?appid=${provider.clientId}&agentid=${provider.appId}&redirect_uri=${redirectUri}&state=${state}&usertype=member`;
+        return `${endpoint}?login_type=CorpApp&appid=${provider.clientId}&agentid=${provider.appId}&redirect_uri=${redirectUri}&state=${state}`;
       } else {
         return `https://error:not-supported-provider-method:${provider.method}`;
       }
@@ -430,7 +446,8 @@ export function getAuthUrl(application, provider, method) {
         endpoint = authInfo[provider.type].silentEndpoint;
         return `${endpoint}?appid=${provider.clientId}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}&response_type=code#wechat_redirect`;
       } else if (provider.method === "Normal") {
-        return `${endpoint}?appid=${provider.clientId}&redirect_uri=${redirectUri}&state=${state}&usertype=member`;
+        endpoint = authInfo[provider.type].endpoint;
+        return `${endpoint}?login_type=ServiceApp&appid=${provider.clientId}&redirect_uri=${redirectUri}&state=${state}`;
       } else {
         return `https://error:not-supported-provider-method:${provider.method}`;
       }
@@ -457,6 +474,8 @@ export function getAuthUrl(application, provider, method) {
     return `${provider.domain}/v1/authorize?client_id=${provider.clientId}&redirect_uri=${redirectUri}&state=${state}&response_type=code&scope=${scope}`;
   } else if (provider.type === "Douyin" || provider.type === "TikTok") {
     return `${endpoint}?client_key=${provider.clientId}&redirect_uri=${redirectUri}&state=${state}&response_type=code&scope=${scope}`;
+  } else if (provider.type === "Kwai") {
+    return `${endpoint}?app_id=${provider.clientId}&redirect_uri=${redirectUri}&state=${state}&response_type=code&scope=${scope}`;
   } else if (provider.type === "Custom") {
     return `${provider.customAuthUrl}?client_id=${provider.clientId}&redirect_uri=${redirectUri}&scope=${provider.scopes}&response_type=code&state=${state}`;
   } else if (provider.type === "Bilibili") {

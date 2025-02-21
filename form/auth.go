@@ -14,8 +14,11 @@
 
 package form
 
+import "reflect"
+
 type AuthForm struct {
-	Type string `json:"type"`
+	Type         string `json:"type"`
+	SigninMethod string `json:"signinMethod"`
 
 	Organization   string `json:"organization"`
 	Username       string `json:"username"`
@@ -23,6 +26,10 @@ type AuthForm struct {
 	Name           string `json:"name"`
 	FirstName      string `json:"firstName"`
 	LastName       string `json:"lastName"`
+	Gender         string `json:"gender"`
+	Bio            string `json:"bio"`
+	Tag            string `json:"tag"`
+	Education      string `json:"education"`
 	Email          string `json:"email"`
 	Phone          string `json:"phone"`
 	Affiliation    string `json:"affiliation"`
@@ -30,13 +37,14 @@ type AuthForm struct {
 	Region         string `json:"region"`
 	InvitationCode string `json:"invitationCode"`
 
-	Application string `json:"application"`
-	ClientId    string `json:"clientId"`
-	Provider    string `json:"provider"`
-	Code        string `json:"code"`
-	State       string `json:"state"`
-	RedirectUri string `json:"redirectUri"`
-	Method      string `json:"method"`
+	Application  string `json:"application"`
+	ClientId     string `json:"clientId"`
+	Provider     string `json:"provider"`
+	ProviderBack string `json:"providerBack"`
+	Code         string `json:"code"`
+	State        string `json:"state"`
+	RedirectUri  string `json:"redirectUri"`
+	Method       string `json:"method"`
 
 	EmailCode   string `json:"emailCode"`
 	PhoneCode   string `json:"phoneCode"`
@@ -58,4 +66,16 @@ type AuthForm struct {
 
 	Plan    string `json:"plan"`
 	Pricing string `json:"pricing"`
+
+	FaceId []float64 `json:"faceId"`
+}
+
+func GetAuthFormFieldValue(form *AuthForm, fieldName string) (bool, string) {
+	val := reflect.ValueOf(*form)
+	fieldValue := val.FieldByName(fieldName)
+
+	if fieldValue.IsValid() && fieldValue.Kind() == reflect.String {
+		return true, fieldValue.String()
+	}
+	return false, ""
 }

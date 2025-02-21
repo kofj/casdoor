@@ -156,7 +156,7 @@ func (c *ApiController) DeleteToken() {
 // @Success 200 {object} object.TokenWrapper The Response object
 // @Success 400 {object} object.TokenError The Response object
 // @Success 401 {object} object.TokenError The Response object
-// @router api/login/oauth/access_token [post]
+// @router /login/oauth/access_token [post]
 func (c *ApiController) GetOAuthToken() {
 	clientId := c.Input().Get("client_id")
 	clientSecret := c.Input().Get("client_secret")
@@ -164,6 +164,7 @@ func (c *ApiController) GetOAuthToken() {
 	code := c.Input().Get("code")
 	verifier := c.Input().Get("code_verifier")
 	scope := c.Input().Get("scope")
+	nonce := c.Input().Get("nonce")
 	username := c.Input().Get("username")
 	password := c.Input().Get("password")
 	tag := c.Input().Get("tag")
@@ -197,6 +198,9 @@ func (c *ApiController) GetOAuthToken() {
 			if scope == "" {
 				scope = tokenRequest.Scope
 			}
+			if nonce == "" {
+				nonce = tokenRequest.Nonce
+			}
 			if username == "" {
 				username = tokenRequest.Username
 			}
@@ -216,7 +220,7 @@ func (c *ApiController) GetOAuthToken() {
 	}
 
 	host := c.Ctx.Request.Host
-	token, err := object.GetOAuthToken(grantType, clientId, clientSecret, code, verifier, scope, username, password, host, refreshToken, tag, avatar, c.GetAcceptLanguage())
+	token, err := object.GetOAuthToken(grantType, clientId, clientSecret, code, verifier, scope, nonce, username, password, host, refreshToken, tag, avatar, c.GetAcceptLanguage())
 	if err != nil {
 		c.ResponseError(err.Error())
 		return
@@ -271,8 +275,17 @@ func (c *ApiController) RefreshToken() {
 	c.ServeJSON()
 }
 
+func (c *ApiController) ResponseTokenError(errorMsg string) {
+	c.Data["json"] = &object.TokenError{
+		Error: errorMsg,
+	}
+	c.SetTokenErrorHttpStatus()
+	c.ServeJSON()
+}
+
 // IntrospectToken
 // @Title IntrospectToken
+// @Tag Login API
 // @Description The introspection endpoint is an OAuth 2.0 endpoint that takes a
 // parameter representing an OAuth 2.0 token and returns a JSON document
 // representing the meta information surrounding the
@@ -292,63 +305,105 @@ func (c *ApiController) IntrospectToken() {
 		clientId = c.Input().Get("client_id")
 		clientSecret = c.Input().Get("client_secret")
 		if clientId == "" || clientSecret == "" {
-			c.ResponseError(c.T("token:Empty clientId or clientSecret"))
-			c.Data["json"] = &object.TokenError{
-				Error: object.InvalidRequest,
-			}
-			c.SetTokenErrorHttpStatus()
-			c.ServeJSON()
+			c.ResponseTokenError(object.InvalidRequest)
 			return
 		}
 	}
+
 	application, err := object.GetApplicationByClientId(clientId)
 	if err != nil {
-		c.ResponseError(err.Error())
+		c.ResponseTokenError(err.Error())
 		return
 	}
 
 	if application == nil || application.ClientSecret != clientSecret {
-		c.ResponseError(c.T("token:Invalid application or wrong clientSecret"))
-		c.Data["json"] = &object.TokenError{
-			Error: object.InvalidClient,
+		c.ResponseTokenError(c.T("token:Invalid application or wrong clientSecret"))
+		return
+	}
+
+	tokenTypeHint := c.Input().Get("token_type_hint")
+	var token *object.Token
+	if tokenTypeHint != "" {
+		token, err = object.GetTokenByTokenValue(tokenValue, tokenTypeHint)
+		if err != nil {
+			c.ResponseTokenError(err.Error())
+			return
 		}
-		c.SetTokenErrorHttpStatus()
-		return
-	}
-	token, err := object.GetTokenByTokenAndApplication(tokenValue, application.Name)
-	if err != nil {
-		c.ResponseError(err.Error())
-		return
+		if token == nil {
+			c.Data["json"] = &object.IntrospectionResponse{Active: false}
+			c.ServeJSON()
+			return
+		}
 	}
 
-	if token == nil {
-		c.Data["json"] = &object.IntrospectionResponse{Active: false}
-		c.ServeJSON()
-		return
-	}
-	jwtToken, err := object.ParseJwtTokenByApplication(tokenValue, application)
-	if err != nil || jwtToken.Valid() != nil {
-		// and token revoked case. but we not implement
-		// TODO: 2022-03-03 add token revoked check, when we implemented the Token Revocation(rfc7009) Specs.
-		// refs: https://tools.ietf.org/html/rfc7009
-		c.Data["json"] = &object.IntrospectionResponse{Active: false}
-		c.ServeJSON()
-		return
+	var introspectionResponse object.IntrospectionResponse
+
+	if application.TokenFormat == "JWT-Standard" {
+		jwtToken, err := object.ParseStandardJwtTokenByApplication(tokenValue, application)
+		if err != nil || jwtToken.Valid() != nil {
+			// and token revoked case. but we not implement
+			// TODO: 2022-03-03 add token revoked check, when we implemented the Token Revocation(rfc7009) Specs.
+			// refs: https://tools.ietf.org/html/rfc7009
+			c.Data["json"] = &object.IntrospectionResponse{Active: false}
+			c.ServeJSON()
+			return
+		}
+
+		introspectionResponse = object.IntrospectionResponse{
+			Active:    true,
+			Scope:     jwtToken.Scope,
+			ClientId:  clientId,
+			Username:  jwtToken.Name,
+			TokenType: jwtToken.TokenType,
+			Exp:       jwtToken.ExpiresAt.Unix(),
+			Iat:       jwtToken.IssuedAt.Unix(),
+			Nbf:       jwtToken.NotBefore.Unix(),
+			Sub:       jwtToken.Subject,
+			Aud:       jwtToken.Audience,
+			Iss:       jwtToken.Issuer,
+			Jti:       jwtToken.ID,
+		}
+	} else {
+		jwtToken, err := object.ParseJwtTokenByApplication(tokenValue, application)
+		if err != nil || jwtToken.Valid() != nil {
+			// and token revoked case. but we not implement
+			// TODO: 2022-03-03 add token revoked check, when we implemented the Token Revocation(rfc7009) Specs.
+			// refs: https://tools.ietf.org/html/rfc7009
+			c.Data["json"] = &object.IntrospectionResponse{Active: false}
+			c.ServeJSON()
+			return
+		}
+
+		introspectionResponse = object.IntrospectionResponse{
+			Active:    true,
+			Scope:     jwtToken.Scope,
+			ClientId:  clientId,
+			Username:  jwtToken.Name,
+			TokenType: jwtToken.TokenType,
+			Exp:       jwtToken.ExpiresAt.Unix(),
+			Iat:       jwtToken.IssuedAt.Unix(),
+			Nbf:       jwtToken.NotBefore.Unix(),
+			Sub:       jwtToken.Subject,
+			Aud:       jwtToken.Audience,
+			Iss:       jwtToken.Issuer,
+			Jti:       jwtToken.ID,
+		}
 	}
 
-	c.Data["json"] = &object.IntrospectionResponse{
-		Active:    true,
-		Scope:     jwtToken.Scope,
-		ClientId:  clientId,
-		Username:  token.User,
-		TokenType: token.TokenType,
-		Exp:       jwtToken.ExpiresAt.Unix(),
-		Iat:       jwtToken.IssuedAt.Unix(),
-		Nbf:       jwtToken.NotBefore.Unix(),
-		Sub:       jwtToken.Subject,
-		Aud:       jwtToken.Audience,
-		Iss:       jwtToken.Issuer,
-		Jti:       jwtToken.ID,
+	if tokenTypeHint == "" {
+		token, err = object.GetTokenByTokenValue(tokenValue, introspectionResponse.TokenType)
+		if err != nil {
+			c.ResponseTokenError(err.Error())
+			return
+		}
+		if token == nil {
+			c.Data["json"] = &object.IntrospectionResponse{Active: false}
+			c.ServeJSON()
+			return
+		}
 	}
+	introspectionResponse.TokenType = token.TokenType
+
+	c.Data["json"] = introspectionResponse
 	c.ServeJSON()
 }

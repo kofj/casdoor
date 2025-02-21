@@ -21,10 +21,7 @@ import * as Setting from "./Setting";
 import i18next from "i18next";
 import WebhookHeaderTable from "./table/WebhookHeaderTable";
 
-import {Controlled as CodeMirror} from "react-codemirror2";
-import "codemirror/lib/codemirror.css";
-require("codemirror/theme/material-darker.css");
-require("codemirror/mode/javascript/javascript");
+import Editor from "./common/Editor";
 
 const {Option} = Select;
 
@@ -62,6 +59,7 @@ const userTemplate = {
   "name": "admin",
   "createdTime": "2020-07-16T21:46:52+08:00",
   "updatedTime": "",
+  "deletedTime": "",
   "id": "9eb20f79-3bb5-4e74-99ac-39e3b9a171e8",
   "type": "normal-user",
   "password": "***",
@@ -166,6 +164,9 @@ class WebhookEditPage extends React.Component {
       ["add", "update", "delete"].forEach(action => {
         res.push(`${action}-${obj}`);
       });
+      if (obj === "payment") {
+        res.push("invoice-payment", "notify-payment");
+      }
     });
     return res;
   }
@@ -274,7 +275,7 @@ class WebhookEditPage extends React.Component {
               }} >
               {
                 (
-                  ["signup", "login", "logout"].concat(this.getApiPaths()).map((option, index) => {
+                  ["signup", "login", "logout", "new-user"].concat(this.getApiPaths()).map((option, index) => {
                     return (
                       <Option key={option} value={option}>{option}</Option>
                     );
@@ -300,12 +301,18 @@ class WebhookEditPage extends React.Component {
           </Col>
           <Col span={22} >
             <div style={{width: "900px", height: "300px"}} >
-              <CodeMirror
-                value={previewText}
-                options={{mode: "javascript", theme: "material-darker"}}
-                onBeforeChange={(editor, data, value) => {}}
-              />
+              <Editor value={previewText} lang="js" fillHeight readOnly dark />
             </div>
+          </Col>
+        </Row>
+        <Row style={{marginTop: "20px"}} >
+          <Col style={{marginTop: "5px"}} span={(Setting.isMobile()) ? 19 : 2}>
+            {Setting.getLabel(i18next.t("webhook:Single org only"), i18next.t("webhook:Single org only - Tooltip"))} :
+          </Col>
+          <Col span={1} >
+            <Switch checked={this.state.webhook.singleOrgOnly} onChange={checked => {
+              this.updateWebhookField("singleOrgOnly", checked);
+            }} />
           </Col>
         </Row>
         <Row style={{marginTop: "20px"}} >

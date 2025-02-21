@@ -33,7 +33,7 @@ export function connectSmtpServer(provider) {
   testEmailProvider(provider)
     .then((res) => {
       if (res.status === "ok") {
-        Setting.showMessage("success", "provider:SMTP connected successfully");
+        Setting.showMessage("success", i18next.t("provider:SMTP connected successfully"));
       } else {
         Setting.showMessage("error", res.msg);
       }
@@ -50,6 +50,7 @@ function testEmailProvider(provider, email = "") {
     sender: provider.displayName,
     receivers: email === "" ? ["TestSmtpServer"] : [email],
     provider: provider.name,
+    providerObject: provider,
   };
 
   return fetch(`${Setting.ServerUrl}/api/send-email`, {

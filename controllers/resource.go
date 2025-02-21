@@ -52,6 +52,15 @@ func (c *ApiController) GetResources() {
 	sortField := c.Input().Get("sortField")
 	sortOrder := c.Input().Get("sortOrder")
 
+	isOrgAdmin, ok := c.IsOrgAdmin()
+	if !ok {
+		return
+	}
+
+	if isOrgAdmin {
+		user = ""
+	}
+
 	if sortField == "Direct" {
 		provider, err := c.GetProviderFromContext("Storage")
 		if err != nil {
@@ -248,7 +257,7 @@ func (c *ApiController) UploadResource() {
 		fileType, _ = util.GetOwnerAndNameFromIdNoCheck(mimeType + "/")
 	}
 
-	fullFilePath = object.GetTruncatedPath(provider, fullFilePath, 175)
+	fullFilePath = object.GetTruncatedPath(provider, fullFilePath, 450)
 	if tag != "avatar" && tag != "termsOfUse" && !strings.HasPrefix(tag, "idCard") {
 		ext := filepath.Ext(filepath.Base(fullFilePath))
 		index := len(fullFilePath) - len(ext)

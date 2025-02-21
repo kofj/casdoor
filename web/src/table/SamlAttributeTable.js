@@ -38,7 +38,7 @@ class SamlAttributeTable extends React.Component {
   }
 
   addRow(table) {
-    const row = {Name: "", nameformat: "", value: ""};
+    const row = {Name: "", nameFormat: "", value: ""};
     if (table === undefined || table === null) {
       table = [];
     }
@@ -64,7 +64,7 @@ class SamlAttributeTable extends React.Component {
   renderTable(table) {
     const columns = [
       {
-        title: i18next.t("user:Name"),
+        title: i18next.t("general:Name"),
         dataIndex: "name",
         key: "name",
         width: "200px",
@@ -77,9 +77,9 @@ class SamlAttributeTable extends React.Component {
         },
       },
       {
-        title: i18next.t("user:Name format"),
-        dataIndex: "nameformat",
-        key: "nameformat",
+        title: i18next.t("general:Name format"),
+        dataIndex: "nameFormat",
+        key: "nameFormat",
         width: "200px",
         render: (text, record, index) => {
           return (
@@ -87,18 +87,18 @@ class SamlAttributeTable extends React.Component {
               value={text}
               defaultValue="urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified"
               onChange={value => {
-                this.updateField(table, index, "nameformat", value);
+                this.updateField(table, index, "nameFormat", value);
               }} >
-              <Option key="Unspecified" value="urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified">{i18next.t("general:Unspecified")}</Option>
-              <Option key="Basic" value="urn:oasis:names:tc:SAML:2.0:attrname-format:basic">{i18next.t("application:Basic")}</Option>
-              <Option key="UriReference" value="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">{i18next.t("application:UriReference")}</Option>
-              <Option key="x500AttributeName" value="urn:oasis:names:tc:SAML:2.0:attrname-format:X500">{i18next.t("application:x500AttributeName")}</Option>
+              <Option key="Unspecified" value="urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified">Unspecified</Option>
+              <Option key="Basic" value="urn:oasis:names:tc:SAML:2.0:attrname-format:basic">Basic</Option>
+              <Option key="UriReference" value="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">UriReference</Option>
+              <Option key="x500AttributeName" value="urn:oasis:names:tc:SAML:2.0:attrname-format:X500">x500AttributeName</Option>
             </Select>
           );
         },
       },
       {
-        title: i18next.t("user:Value"),
+        title: i18next.t("webhook:Value"),
         dataIndex: "value",
         key: "value",
         width: "200px",

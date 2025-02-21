@@ -14,7 +14,7 @@
 
 import React from "react";
 import {DeleteOutlined, DownOutlined, UpOutlined} from "@ant-design/icons";
-import {Button, Col, Row, Select, Switch, Table, Tooltip} from "antd";
+import {Button, Col, Input, Row, Select, Switch, Table, Tooltip} from "antd";
 import * as Setting from "../Setting";
 import i18next from "i18next";
 
@@ -88,6 +88,7 @@ class AccountTable extends React.Component {
       {name: "Gender", label: i18next.t("user:Gender")},
       {name: "Birthday", label: i18next.t("user:Birthday")},
       {name: "Education", label: i18next.t("user:Education")},
+      {name: "Balance", label: i18next.t("user:Balance")},
       {name: "Score", label: i18next.t("user:Score")},
       {name: "Karma", label: i18next.t("user:Karma")},
       {name: "Ranking", label: i18next.t("user:Ranking")},
@@ -102,9 +103,13 @@ class AccountTable extends React.Component {
       {name: "Is admin", label: i18next.t("user:Is admin")},
       {name: "Is forbidden", label: i18next.t("user:Is forbidden")},
       {name: "Is deleted", label: i18next.t("user:Is deleted")},
+      {name: "Need update password", label: i18next.t("user:Need update password")},
+      {name: "IP whitelist", label: i18next.t("general:IP whitelist")},
       {name: "Multi-factor authentication", label: i18next.t("user:Multi-factor authentication")},
       {name: "WebAuthn credentials", label: i18next.t("user:WebAuthn credentials")},
       {name: "Managed accounts", label: i18next.t("user:Managed accounts")},
+      {name: "Face ID", label: i18next.t("user:Face ID")},
+      {name: "MFA accounts", label: i18next.t("user:MFA accounts")},
     ];
   };
 
@@ -136,6 +141,26 @@ class AccountTable extends React.Component {
           return (
             <Switch checked={text} onChange={checked => {
               this.updateField(table, index, "visible", checked);
+            }} />
+          );
+        },
+      },
+      {
+        title: i18next.t("signup:Regex"),
+        dataIndex: "regex",
+        key: "regex",
+        width: "200px",
+        render: (text, record, index) => {
+          const regexIncludeList = ["Display name", "Password", "Email", "Phone", "Location",
+            "Title", "Homepage", "Bio", "Gender", "Birthday", "Education", "ID card",
+            "ID card type"];
+          if (!regexIncludeList.includes(record.name)) {
+            return null;
+          }
+
+          return (
+            <Input value={text} onChange={e => {
+              this.updateField(table, index, "regex", e.target.value);
             }} />
           );
         },

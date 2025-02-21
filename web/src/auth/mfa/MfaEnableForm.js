@@ -3,13 +3,17 @@ import i18next from "i18next";
 import React, {useState} from "react";
 import * as MfaBackend from "../../backend/MfaBackend";
 
-export function MfaEnableForm({user, mfaType, recoveryCodes, onSuccess, onFail}) {
+export function MfaEnableForm({user, mfaType, secret, recoveryCodes, dest, countryCode, onSuccess, onFail}) {
   const [loading, setLoading] = useState(false);
   const requestEnableMfa = () => {
     const data = {
       mfaType,
+      secret,
+      dest,
+      countryCode,
       ...user,
     };
+    data["recoveryCodes"] = recoveryCodes[0];
     setLoading(true);
     MfaBackend.MfaSetupEnable(data).then(res => {
       if (res.status === "ok") {

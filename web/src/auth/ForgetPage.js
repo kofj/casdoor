@@ -21,7 +21,7 @@ import * as Setting from "../Setting";
 import i18next from "i18next";
 import {SendCodeInput} from "../common/SendCodeInput";
 import * as UserBackend from "../backend/UserBackend";
-import {CheckCircleOutlined, KeyOutlined, LockOutlined, SolutionOutlined, UserOutlined} from "@ant-design/icons";
+import {ArrowLeftOutlined, CheckCircleOutlined, KeyOutlined, LockOutlined, SolutionOutlined, UserOutlined} from "@ant-design/icons";
 import CustomGithubCorner from "../common/CustomGithubCorner";
 import {withRouter} from "react-router-dom";
 import * as PasswordChecker from "../common/PasswordChecker";
@@ -35,8 +35,8 @@ class ForgetPage extends React.Component {
       classes: props,
       applicationName: props.applicationName ?? props.match.params?.applicationName,
       msg: null,
-      name: "",
-      username: "",
+      name: props.account ? props.account.name : "",
+      username: props.account ? props.account.name : "",
       phone: "",
       email: "",
       dest: "",
@@ -44,9 +44,9 @@ class ForgetPage extends React.Component {
       verifyType: "", // "email", "phone"
       current: 0,
     };
-
     this.form = React.createRef();
   }
+
   componentDidMount() {
     if (this.getApplicationObj() === undefined) {
       if (this.state.applicationName !== undefined) {
@@ -153,7 +153,12 @@ class ForgetPage extends React.Component {
     values.userOwner = this.getApplicationObj()?.organizationObj.name;
     UserBackend.setPassword(values.userOwner, values.username, "", values?.newPassword, this.state.code).then(res => {
       if (res.status === "ok") {
-        Setting.redirectToLoginPage(this.getApplicationObj(), this.props.history);
+        const linkInStorage = sessionStorage.getItem("signinUrl");
+        if (linkInStorage !== null && linkInStorage !== "") {
+          Setting.goToLinkSoft(this, linkInStorage);
+        } else {
+          Setting.redirectToLoginPage(this.getApplicationObj(), this.props.history);
+        }
       } else {
         Setting.showMessage("error", res.msg);
       }
@@ -199,6 +204,7 @@ class ForgetPage extends React.Component {
             initialValues={{
               application: application.name,
               organization: application.organization,
+              username: this.state.name,
             }}
             style={{width: "300px"}}
             size="large"
@@ -258,6 +264,9 @@ class ForgetPage extends React.Component {
             )
           }
           onValuesChange={(changedValues, allValues) => {
+            if (!changedValues.dest) {
+              return;
+            }
             const verifyType = changedValues.dest?.indexOf("@") === -1 ? "phone" : "email";
             this.setState({
               dest: changedValues.dest,
@@ -437,6 +446,18 @@ class ForgetPage extends React.Component {
     );
   }
 
+  stepBack() {
+    if (this.state.current > 0) {
+      this.setState({
+        current: this.state.current - 1,
+      });
+    } else if (this.props.history.length > 1) {
+      this.props.history.goBack();
+    } else {
+      Setting.redirectToLoginPage(this.getApplicationObj(), this.props.history);
+    }
+  }
+
   render() {
     const application = this.getApplicationObj();
     if (application === undefined) {
@@ -450,6 +471,12 @@ class ForgetPage extends React.Component {
       <React.Fragment>
         <CustomGithubCorner />
         <div className="forget-content" style={{padding: Setting.isMobile() ? "0" : null, boxShadow: Setting.isMobile() ? "none" : null}}>
+          <Button type="text"
+            style={{position: "relative", left: Setting.isMobile() ? "10px" : "-90px", top: 0}}
+            icon={<ArrowLeftOutlined style={{fontSize: "24px"}} />}
+            size={"large"}
+            onClick={() => {this.stepBack();}}
+          />
           <Row>
             <Col span={24} style={{justifyContent: "center"}}>
               <Row>
@@ -467,7 +494,7 @@ class ForgetPage extends React.Component {
               <Row>
                 <Col span={24}>
                   <div style={{textAlign: "center", fontSize: "28px"}}>
-                    {i18next.t("forget:Retrieve password")}
+                    {i18next.t("forget:Reset password")}
                   </div>
                 </Col>
               </Row>
